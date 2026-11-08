@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#080d12" />
+    <meta name="description" content="QUANTX Midnight Research. Think in Models. Research the Markets." />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+    <title>QUANTX | Midnight Research</title>
+  </head>
+  <body>
+    <div class="app-shell">
+      <button class="sidebar-scrim" id="sidebar-scrim" type="button" aria-label="Close navigation" hidden></button>
+      <aside class="sidebar" id="sidebar" aria-label="Primary navigation">
+        <a class="brand" href="#overview" data-home-link>
+          <span class="brand-mark" data-icon="ChartNoAxesCombined"></span>
+          <span class="brand-copy"><strong>QUANTX</strong><small>MIDNIGHT RESEARCH</small></span>
+        </a>
+
+        <p class="nav-caption">WORKSPACE</p>
+        <nav class="primary-nav" aria-label="Workspace">
+          <button class="nav-link is-active" type="button" data-page="overview" aria-label="Overview" aria-current="page"><span class="nav-icon" data-icon="Activity"></span><span>Overview</span></button>
+          <button class="nav-link" type="button" data-page="markets" aria-label="Markets"><span class="nav-icon" data-icon="CandlestickChart"></span><span>Markets</span></button>
+          <button class="nav-link" type="button" data-page="strategies" aria-label="Strategies"><span class="nav-icon" data-icon="ChartNoAxesCombined"></span><span>Strategies</span></button>
+          <button class="nav-link" type="button" data-page="backtesting" aria-label="Backtesting"><span class="nav-icon" data-icon="Activity"></span><span>Backtesting</span></button>
+          <button class="nav-link" type="button" data-page="monte-carlo" aria-label="Monte Carlo"><span class="nav-icon" data-icon="Database"></span><span>Monte Carlo</span></button>
+          <button class="nav-link" type="button" data-page="research-lab" aria-label="Research Lab"><span class="nav-icon" data-icon="FlaskConical"></span><span>Research Lab</span></button>
+        </nav>
+
+        <div class="sidebar-bottom">
+          <button class="nav-link" type="button" data-page="settings" aria-label="Settings"><span class="nav-icon" data-icon="Settings"></span><span>Settings</span></button>
+          <div class="engine-card"><span class="engine-mark"></span><span><strong>LOCAL ENGINE</strong><small>SIMULATION READY</small></span><span class="engine-state" aria-hidden="true"></span></div>
+          <p class="sidebar-footnote">THINK IN MODELS.<br />RESEARCH THE MARKETS.</p>
+        </div>
+      </aside>
+
+      <div class="main-shell">
+        <header class="topbar">
+          <div class="topbar-left">
+            <button class="icon-button menu-button" id="sidebar-toggle" type="button" aria-label="Open navigation" aria-expanded="false"><span data-icon="Menu"></span></button>
+            <div class="page-identity">
+              <p class="breadcrumb" id="breadcrumb">QUANTX <span>/</span> RESEARCH WORKSPACE</p>
+              <h1 id="topbar-title">Overview</h1>
+            </div>
+          </div>
+          <div class="topbar-actions">
+            <div class="simulation-badge"><span class="status-pulse"></span><span>SIMULATION MODE</span></div>
+            <span class="topbar-divider"></span>
+            <button class="icon-button" id="contrast-toggle" type="button" aria-label="Increase interface contrast" aria-pressed="false" title="Toggle interface contrast"><span data-icon="Sun"></span></button>
+            <button class="icon-button settings-button" id="settings-button" type="button" aria-label="Open settings" title="Open settings"><span data-icon="Settings"></span></button>
+          </div>
+        </header>
+
+        <main class="content-area" id="main-content">
+          <section class="view overview-view" id="overview-view" aria-labelledby="welcome-title">
+            <div class="welcome-row">
+              <div>
+                <p class="section-kicker">RESEARCH / OVERVIEW</p>
+                <h2 id="welcome-title">Research Overview</h2>
+                <p class="welcome-copy">Your quantitative research workspace.</p>
+              </div>
+              <div class="welcome-actions">
+                <div class="ready-label"><span class="status-pulse"></span><span>SIMULATION ENGINE READY</span></div>
+                <button class="primary-button" id="run-simulation" type="button"><span data-icon="ChartNoAxesCombined"></span> Run simulation</button>
+              </div>
+            </div>
+
+            <section class="market-strip" aria-label="Simulated market overview">
+              <div class="market-stat"><p class="stat-label">SIMULATED ASSET PRICE <span class="symbol-tag">SPX</span></p><p class="stat-value" id="asset-price">5,248.63</p><p class="stat-foot">Index points <span class="stat-dot"></span> Simulated</p></div>
+              <div class="market-stat"><p class="stat-label">DAILY RETURN</p><p class="stat-value" id="daily-return">+0.42%</p><p class="stat-foot">Previous session</p></div>
+              <div class="market-stat"><p class="stat-label">ANNUALIZED VOLATILITY</p><p class="stat-value" id="annual-volatility">18.6%</p><p class="stat-foot">252-session estimate</p></div>
+              <div class="market-stat"><p class="stat-label">INITIAL SIMULATED CAPITAL</p><p class="stat-value">$100,000</p><p class="stat-foot">Paper portfolio</p></div>
+            </section>
+
+            <div class="analysis-grid">
+              <section class="panel chart-panel" aria-labelledby="chart-title">
+                <div class="panel-heading chart-heading">
+                  <div><p class="section-kicker">MARKET SERIES <span class="sim-tag">SIMULATED</span></p><h2 id="chart-title">SPX price action</h2><p class="panel-subtitle">Price with short and long moving averages</p></div>
+                  <div class="period-control" role="group" aria-label="Chart period">
+                    <button class="period-button" type="button" data-period="1W" aria-pressed="false">1W</button>
+                    <button class="period-button is-active" type="button" data-period="1M" aria-pressed="true">1M</button>
+                    <button class="period-button" type="button" data-period="3M" aria-pressed="false">3M</button>
+                    <button class="period-button" type="button" data-period="1Y" aria-pressed="false">1Y</button>
+                  </div>
+                </div>
+                <div class="chart-legend" aria-label="Chart series"><span><i class="legend-line price-line"></i>Price</span><span><i class="legend-line short-line"></i>MA (5)</span><span><i class="legend-line long-line"></i>MA (20)</span><span class="chart-unit">INDEX POINTS</span></div>
+                <div class="chart-frame"><canvas id="price-chart" role="img" aria-label="Simulated SPX price chart with five and twenty session moving averages"></canvas></div>
+                <div class="chart-foot"><span>Hover or tap the chart to inspect a session</span><span id="chart-range-label">30 SESSIONS</span></div>
+              </section>
+
+              <section class="panel performance-panel" aria-labelledby="performance-title">
+                <div class="panel-heading compact-heading"><div><p class="section-kicker">PORTFOLIO ANALYTICS</p><h2 id="performance-title">Performance</h2></div><span class="panel-index">01</span></div>
+                <div class="performance-list">
+                  <div class="performance-row"><span>Total return</span><strong id="total-return">+8.42%</strong></div>
+                  <div class="performance-row"><span>Sharpe ratio</span><strong id="sharpe-ratio">1.84</strong></div>
+                  <div class="performance-row"><span>Max drawdown</span><strong id="max-drawdown">-4.26%</strong></div>
+                  <div class="performance-row"><span>Win rate</span><strong id="win-rate">58.3%</strong></div>
+                </div>
+                <div class="analytics-note"><span data-icon="Activity"></span><p>Calculated from the selected simulated series. Past simulation results are not forecasts.</p></div>
+              </section>
+            </div>
+
+            <section class="panel live-simulation-panel" aria-labelledby="live-simulation-title">
+              <div class="panel-heading live-simulation-heading">
+                <div><p class="section-kicker">LOCAL ENGINE / ONE-SECOND TICKS <span class="sim-tag">SIMULATED</span></p><h2 id="live-simulation-title">Continuous portfolio simulation</h2></div>
+                <div class="live-simulation-actions"><label class="live-history-control" for="live-history-window">HISTORY<select id="live-history-window"><option value="30">30</option><option value="60" selected>60</option><option value="120">120</option><option value="300">300</option></select></label><span class="simulation-run-state" id="live-simulation-status">PAUSED</span><button class="secondary-button" id="live-simulation-start" type="button">Start</button><button class="secondary-button" id="live-simulation-pause" type="button" disabled>Pause</button><button class="secondary-button" id="live-simulation-reset" type="button" disabled>Reset</button></div>
+              </div>
+              <div class="live-simulation-metrics" aria-label="Current virtual portfolio state">
+                <div><span>VIRTUAL TIME</span><strong id="live-simulation-time">T+0s</strong></div>
+                <div><span>SIMULATED PRICE</span><strong id="live-simulation-price">5,128.40</strong></div>
+                <div><span>VIRTUAL CASH</span><strong id="live-simulation-cash">$100,000.00</strong></div>
+                <div><span>HOLDINGS</span><strong id="live-simulation-holdings">0.0000</strong></div>
+                <div><span>PORTFOLIO EQUITY</span><strong id="live-simulation-equity">$100,000.00</strong></div>
+                <div><span>POLICY SIGNAL</span><strong id="live-simulation-signal">FLAT</strong></div>
+              </div>
+              <div class="live-simulation-chart"><canvas id="live-simulation-chart" role="img" aria-label="One-second synthetic market price and virtual portfolio equity on a shared simulation clock"></canvas></div>
+              <div class="live-simulation-legend"><span><i class="legend-line price-line"></i>SIMULATED PRICE</span><span><i class="legend-line equity-line"></i>VIRTUAL EQUITY</span><span>Equity = cash + holdings × price</span></div>
+            </section>
+
+            <div class="overview-feature-grid">
+              <section class="panel feature-summary" aria-labelledby="overview-diagnostics-title">
+                <div class="panel-heading compact-heading"><div><p class="section-kicker">POLICY REVIEW</p><h2 id="overview-diagnostics-title">Diagnostics</h2></div><span class="diagnostic-status" id="overview-diagnostic-status">PENDING</span></div>
+                <div id="overview-diagnostic-summary" class="summary-checks"></div>
+                <button class="text-button" type="button" data-navigate="backtesting">View full diagnostics <span data-icon="ChevronDown"></span></button>
+              </section>
+              <section class="panel feature-summary" aria-labelledby="overview-risk-title">
+                <div class="panel-heading compact-heading"><div><p class="section-kicker">SIMULATED LIMITS</p><h2 id="overview-risk-title">Risk guardrails</h2></div><span class="diagnostic-status" id="overview-risk-status">PENDING</span></div>
+                <div id="overview-risk-summary" class="summary-checks"></div>
+                <button class="text-button" type="button" data-navigate="backtesting">Review thresholds <span data-icon="ChevronDown"></span></button>
+              </section>
+            </div>
+
+            <section class="panel activity-panel" aria-labelledby="activity-title">
+              <div class="panel-heading activity-heading"><div><p class="section-kicker">LOCAL RESEARCH LOG</p><h2 id="activity-title">Recent experiments</h2></div><button class="text-button" id="view-research" type="button">Open research lab <span data-icon="ChevronDown"></span></button></div>
+              <div class="table-scroll"><table class="experiment-table"><thead><tr><th>EXPERIMENT</th><th>STRATEGY</th><th>RUN TIME</th><th>STATUS</th><th><span class="visually-hidden">Action</span></th></tr></thead><tbody id="experiment-rows"></tbody></table></div>
+              <p class="table-note">Experiments are saved locally in this browser.</p>
+            </section>
+
+            <footer class="content-footer"><span>QUANTX / MIDNIGHT RESEARCH</span><span>ALL VALUES ARE SIMULATED</span><span>THINK IN MODELS. RESEARCH THE MARKETS.</span></footer>
+          </section>
+          <section class="view secondary-view" id="secondary-view" hidden aria-live="polite"></section>
+        </main>
+      </div>
+      <div class="toast" id="toast" role="status" aria-live="polite"></div>
+    </div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
