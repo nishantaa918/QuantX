@@ -98,12 +98,15 @@ test('backtest and Monte Carlo experiments reload reproducibly and can be delete
   app.nav[3].listeners.click();
   app.getElement('#backtest-period').value = '1Y';
   app.getElement('#backtest-seed').value = '0';
+  app.getElement('#commission-bps').value = '1';
+  app.getElement('#slippage-bps').value = '5';
   clickAction(app, 'run-backtest');
 
   let storedRuns = JSON.parse(storage.get('quantx.midnight.experiments'));
   const savedBacktest = storedRuns.find((run) => run.kind === 'backtest');
   assert.ok(savedBacktest);
   assert.equal(savedBacktest.seed, 0);
+  assert.deepEqual(savedBacktest.executionCosts, { commissionBps: 1, slippageBps: 5 });
   assert.ok(['PASS', 'WARNING', 'FAIL'].includes(vm.runInContext('experiments[0].status', app.context)));
 
   app.nav[4].listeners.click();
@@ -120,7 +123,7 @@ test('backtest and Monte Carlo experiments reload reproducibly and can be delete
 
   const reloaded = await bootApplication(storage);
   const loadedBacktest = vm.runInContext(`experiments.find((run) => run.id === ${JSON.stringify(savedBacktest.id)})`, reloaded.context);
-  const expectedBacktest = policy.calculateStrategyBacktest(generateSeries('1Y', 0), savedBacktest.strategyConfig);
+  const expectedBacktest = policy.calculateStrategyBacktest(generateSeries('1Y', 0), savedBacktest.strategyConfig, 100_000, savedBacktest.executionCosts);
   assert.deepEqual(JSON.parse(JSON.stringify(loadedBacktest.backtest.metrics)), JSON.parse(JSON.stringify(expectedBacktest.metrics)));
   const loadedMonteCarlo = vm.runInContext(`experiments.find((run) => run.id === ${JSON.stringify(savedMonteCarlo.id)})`, reloaded.context);
   const expectedMonteCarlo = runMonteCarlo(savedMonteCarlo.monteCarlo.scenarioCount, savedMonteCarlo.monteCarlo.years, savedMonteCarlo.monteCarlo.seed);
