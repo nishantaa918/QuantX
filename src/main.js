@@ -147,6 +147,7 @@ function hydrateExperiment(stored) {
     symbol: dataSource === 'historical' ? series.symbol : null,
     strategyConfig: strategy,
     guardrailThresholds: thresholds,
+    executionCosts: storedExecutionCosts,
     series,
     backtest,
     guardrails,
@@ -747,8 +748,6 @@ function openExperiment(experimentId) {
   guardrailThresholds = { ...experiment.guardrailThresholds };
   executionCosts = { ...DEFAULT_EXECUTION_COSTS, ...experiment.executionCosts };
   try { localStorage.setItem(EXECUTION_COST_STORAGE_KEY, JSON.stringify(executionCosts)); } catch { /* keep the preference in memory */ }
-  executionCosts = { ...DEFAULT_EXECUTION_COSTS, ...experiment.executionCosts };
-  try { localStorage.setItem(EXECUTION_COST_STORAGE_KEY, JSON.stringify(executionCosts)); } catch { /* local preference remains in memory */ }
   if (experiment.kind === 'backtest') latestBacktestSeries = experiment.series;
   currentPeriod = experiment.period;
   simulationSeed = experiment.seed;
