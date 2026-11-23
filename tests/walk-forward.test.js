@@ -2,20 +2,6 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { runWalkForwardValidation } from '../src/walk-forward.js';
 
-function series(length = 140) {
-  const values = Array.from({ length }, (_, index) => {
-    const drift = index < 70 ? 0.0012 : index < 105 ? -0.0008 : 0.001;
-    const cycle = Math.sin(index * 0.47) * 0.004;
-    return index === 0 ? 100 : 100 * Math.exp(valuesLog[index] ?? 0);
-  });
-  return { period: 'HISTORICAL', labels: values.map((_, index) => `Session ${index + 1}`), values };
-}
-
-const valuesLog = Array.from({ length: 140 }, (_, index) => {
-  const drift = index < 70 ? 0.0012 : index < 105 ? -0.0008 : 0.001;
-  return drift * index + Math.sin(index * 0.47) * 0.02;
-});
-
 function makeSeries(length = 140) {
   const points = Array.from({ length }, (_, index) => {
     const drift = index < 70 ? 0.0012 : index < 105 ? -0.0008 : 0.001;
@@ -59,13 +45,14 @@ test('walk-forward validation rejects insufficient history and invalid windows',
 
 test('walk-forward validation rejects invalid candidate grids and reports skipped folds', () => {
   assert.equal(runWalkForwardValidation(makeSeries(), { shortWindows: [10], longWindows: [5] }).valid, false);
-  const noTrades = runWalkForwardValidation(makeSeries(), {
+  const monotonic = { period: 'HISTORICAL', labels: Array.from({ length: 140 }, (_, index) => `Session ${index + 1}`), values: Array.from({ length: 140 }, (_, index) => 100 + index) };
+  const noTrades = runWalkForwardValidation(monotonic, {
     trainWindow: 60,
     testWindow: 20,
     shortWindows: [2],
     longWindows: [6],
     baseParameters: { type: 'mean-reversion', shortWindow: 2, longWindow: 6, lookback: 10, volatilitySensitivity: 1.5 },
   });
-  assert.equal(noTrades.valid, true);
-  assert.ok(noTrades.skippedFolds >= 0);
+  assert.equal(noTrades.valid, false);
+  assert.equal(noTrades.skippedFolds, 4);
 });
