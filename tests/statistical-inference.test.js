@@ -33,7 +33,7 @@ test('Newey-West supports fixed bandwidth and explicit HC0-only lag zero', () =>
 
 test('HAC rejects malformed, short, singular, and unsupported inputs', () => {
   assert.equal(fitHacRegression([1, 2], [[1], [1]]).error, 'insufficient_sample_for_hac');
-  assert.equal(fitHacRegression([1, 2, 3, 4, 5], [[1], [1], [1], [1], [1]]).error, 'design_near_singular');
+  assert.equal(fitHacRegression([1, 2, 3, 4, 5], [[1, 1], [1, 1], [1, 1], [1, 1], [1, 1]]).error, 'design_near_singular');
   assert.equal(fitHacRegression([1, 2, 3, 4, 5], [[1], [1], [1], [1], [1]], { kernel: 'parzen' }).error, 'unsupported_kernel');
 });
 
