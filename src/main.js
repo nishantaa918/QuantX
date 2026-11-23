@@ -372,6 +372,14 @@ function formatRelativeTime(timestamp) {
 
 function navigateTo(page) {
   if (!pageDetails[page]) return;
+  if (page === 'monte-carlo' && currentSeries.period !== 'HISTORICAL' && currentSeries.values.length < 80) {
+    currentPeriod = '1Y';
+    currentSeries = generateSeries(currentPeriod, simulationSeed);
+    refreshPolicyState();
+    updatePriceChart(performanceChart, currentSeries);
+    updatePeriodButtons();
+    updateDashboard(currentSeries);
+  }
   if (page !== 'markets') {
     stopReplay();
     replayController?.dispose();
@@ -705,14 +713,14 @@ function renderWalkForwardPanel() {
 }
 
 function renderMonteCarloPage() {
-  return `${renderPageIntro('SCENARIO ANALYSIS', 'Monte Carlo & policy heatmap', 'Explore deterministic scenario samples and compare calculated strategy parameter combinations.')}
+  return `${renderPageIntro('SCENARIO ANALYSIS', 'Monte Carlo & policy heatmap', 'Resample the selected workspace history and compare strategy combinations on a sufficiently long sample.')}
     <section class="panel page-panel"><div class="panel-heading"><div><p class="section-kicker">PORTFOLIO OUTCOME MODEL</p><h2>Monte Carlo simulation</h2></div><span class="sim-tag">SIMULATED</span></div>
       <div class="form-grid"><label class="field-label" for="scenario-period">Synthetic source period<select id="scenario-period">${periodOptions(currentPeriod)}</select></label><label class="field-label" for="scenario-count">Number of scenarios<input id="scenario-count" type="number" min="100" max="10000" step="100" value="1000" /></label><label class="field-label" for="scenario-horizon">Horizon<select id="scenario-horizon"><option value="1">1 year</option><option value="3">3 years</option><option value="5">5 years</option></select></label><div class="field-action"><button class="secondary-button" type="button" data-action="apply-scenario-period">Apply source period</button><button class="primary-button" type="button" data-action="run-monte-carlo"><span data-icon="Database"></span> Run scenarios</button></div></div>
       <p class="form-error" id="monte-carlo-error" aria-live="polite"></p><div class="result-block" id="monte-carlo-results"><p class="empty-state">Uses the current workspace price history with a circular block bootstrap. At least 61 valid prices (60 returns) are required; select a longer workspace period or load historical data.</p></div>
     </section>
     ${renderPolicyHeatmap('sharpeRatio')}
     ${renderCoverageMonitor(['Monte Carlo scenarios'], 'Monte Carlo coverage')}
-    <p class="disclaimer-line"><span class="status-pulse"></span>Scenario outputs are synthetic and are not forecasts.</p>`;
+    <p class="disclaimer-line"><span class="status-pulse"></span>Resampled scenario outcomes are not forecasts; historical samples cannot represent unobserved market regimes.</p>`;
 }
 
 function getPortfolioResearchAssets() {
@@ -1293,7 +1301,7 @@ secondaryView.addEventListener('click', (event) => {
       return;
     }
     errorElement.textContent = '';
-    document.querySelector('#monte-carlo-results').innerHTML = `${renderMonteCarloSummary(results, scenarioCount, years)}<p class="result-caption">Synthetic outcomes are not forecasts.</p>`;
+    document.querySelector('#monte-carlo-results').innerHTML = `${renderMonteCarloSummary(results, scenarioCount, years)}<p class="result-caption">Resampled outcomes are not forecasts.</p>`;
     const monteCarlo = { ...results, scenarioCount, years, seed, sourcePeriod: currentSeries.period ?? currentPeriod, sourceSeries: { period: currentSeries.period ?? currentPeriod, values: [...currentSeries.values] } };
     addExperiment(createExperimentRecord({ name: `Monte Carlo / ${scenarioCount.toLocaleString()} scenarios`, kind: 'monte-carlo', series: currentSeries, seed, monteCarlo }));
     refreshCoveragePanels();
