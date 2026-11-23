@@ -1,4 +1,6 @@
 const PERIOD_LENGTHS = { '1W': 7, '1M': 30, '3M': 90, '1Y': 252 };
+const MONTE_CARLO_MIN_RETURNS = 60;
+const MONTE_CARLO_TRADING_DAYS = 252;
 
 function createRandom(seed) {
   let state = (Number.isFinite(seed) ? Math.trunc(seed) : 0) >>> 0;
@@ -67,27 +69,52 @@ function empiricalPercentile(sortedValues, probability) {
   return sortedValues[Math.floor((sortedValues.length - 1) * probability)];
 }
 
-export function runMonteCarlo(scenarioCount, years, seed = 1) {
+/**
+ * Historical circular block-bootstrap Monte Carlo.
+ * Returns are sampled in contiguous blocks from the supplied price history,
+ * preserving within-block serial dependence. It does not extrapolate beyond
+ * the empirical return distribution and is not a forecast.
+ */
+export function runMonteCarlo(scenarioCount, years, series, seed = 1, options = {}) {
   if (!Number.isInteger(scenarioCount) || scenarioCount < 100 || scenarioCount > 10_000 || !Number.isInteger(years) || years < 1 || years > 5) {
     return { valid: false, error: 'Use 100-10,000 scenarios and a whole-year horizon from 1 to 5.' };
   }
-  const random = createRandom(seed + scenarioCount * 11);
+  const values = series?.values;
+  if (!Array.isArray(values) || values.length < MONTE_CARLO_MIN_RETURNS + 1 || !values.every((value) => Number.isFinite(value) && value > 0)) {
+    return { valid: false, error: `Monte Carlo needs at least ${MONTE_CARLO_MIN_RETURNS + 1} valid price observations (60 returns). Select a longer series or load historical data.` };
+  }
+  const returns = values.slice(1).map((value, index) => value / values[index] - 1);
+  const mean = returns.reduce((sum, value) => sum + value, 0) / returns.length;
+  const variance = returns.reduce((sum, value) => sum + (value - mean) ** 2, 0) / (returns.length - 1);
+  const dailyVolatility = Math.sqrt(variance);
+  if (!Number.isFinite(dailyVolatility) || dailyVolatility <= Number.EPSILON) {
+    return { valid: false, error: 'Monte Carlo requires a non-constant return history with measurable volatility.' };
+  }
+  const requestedBlockLength = options.blockLength;
+  const blockLength = Number.isInteger(requestedBlockLength)
+    ? Math.max(1, Math.min(requestedBlockLength, returns.length))
+    : Math.max(2, Math.min(20, Math.floor(Math.sqrt(returns.length))));
+  const random = createRandom(seed);
   const outcomes = [];
   const maximumDrawdowns = [];
-  const sessions = years * 252;
-  const drift = 0.0003;
-  const dailyDeviation = 0.011;
+  const sessions = years * MONTE_CARLO_TRADING_DAYS;
   for (let scenario = 0; scenario < scenarioCount; scenario += 1) {
     let value = 1;
-    let peak = value;
+    let peak = 1;
     let maximumDrawdown = 0;
-    for (let session = 0; session < sessions; session += 1) {
-      const first = Math.max(random(), Number.EPSILON);
-      const second = random();
-      const normal = Math.sqrt(-2 * Math.log(first)) * Math.cos(2 * Math.PI * second);
-      value *= Math.exp(drift - dailyDeviation ** 2 / 2 + dailyDeviation * normal);
-      peak = Math.max(peak, value);
-      maximumDrawdown = Math.max(maximumDrawdown, ((peak - value) / peak) * 100);
+    let session = 0;
+    while (session < sessions) {
+      const start = Math.floor(random() * returns.length);
+      for (let offset = 0; offset < blockLength && session < sessions; offset += 1) {
+        const sampledReturn = returns[(start + offset) % returns.length];
+        value *= 1 + sampledReturn;
+        if (!Number.isFinite(value) || value <= 0) {
+          return { valid: false, error: 'The sampled return path produced a non-positive portfolio value; inspect the source series.' };
+        }
+        peak = Math.max(peak, value);
+        maximumDrawdown = Math.max(maximumDrawdown, ((peak - value) / peak) * 100);
+        session += 1;
+      }
     }
     outcomes.push((value - 1) * 100);
     maximumDrawdowns.push(maximumDrawdown);
@@ -96,8 +123,13 @@ export function runMonteCarlo(scenarioCount, years, seed = 1) {
   maximumDrawdowns.sort((first, second) => first - second);
   return {
     valid: true,
+    method: 'circular-block-bootstrap',
     scenarioCount: outcomes.length,
     years,
+    observations: returns.length,
+    blockLength,
+    annualizedHistoricalReturn: ((1 + mean) ** MONTE_CARLO_TRADING_DAYS - 1) * 100,
+    annualizedHistoricalVolatility: dailyVolatility * Math.sqrt(MONTE_CARLO_TRADING_DAYS) * 100,
     lower: empiricalPercentile(outcomes, 0.05),
     median: empiricalPercentile(outcomes, 0.5),
     upper: empiricalPercentile(outcomes, 0.95),
