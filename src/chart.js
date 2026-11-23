@@ -78,7 +78,7 @@ export function buildHistoricalPriceChartConfig(observations) {
     data: {
       labels: observations.map((observation) => observation.date),
       datasets: [{
-        label: 'AAPL daily close',
+        label: `${observations[0]?.symbol ?? 'Asset'} ${observations[0]?.adjustment ?? 'raw'} close`,
         data: observations.map((observation) => observation.close),
         borderColor: '#22c58b',
         backgroundColor: 'rgba(34, 197, 139, 0.06)',
