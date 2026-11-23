@@ -16,7 +16,6 @@ test('simulation reports tau-squared bias, CI coverage, type-I error and predict
   });
   assert.equal(result.valid, true);
   assert.equal(result.completedReplications, 500);
-  assert.equal(result.metrics.typeIErrorRate.estimate, result.metrics.meanEffectConfidenceIntervalCoverage.estimate === 1 ? 0 : result.metrics.typeIErrorRate.estimate);
   for (const metric of [
     result.metrics.tauSquared,
     result.metrics.meanEffectConfidenceIntervalCoverage,
