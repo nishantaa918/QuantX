@@ -143,7 +143,7 @@ test('backtest and Monte Carlo experiments reload reproducibly and can be delete
   const expectedBacktest = policy.calculateStrategyBacktest(generateSeries('1Y', 0), savedBacktest.strategyConfig, 100_000, savedBacktest.executionCosts);
   assert.deepEqual(JSON.parse(JSON.stringify(loadedBacktest.backtest.metrics)), JSON.parse(JSON.stringify(expectedBacktest.metrics)));
   const loadedMonteCarlo = vm.runInContext(`experiments.find((run) => run.id === ${JSON.stringify(savedMonteCarlo.id)})`, reloaded.context);
-  const expectedMonteCarlo = runMonteCarlo(savedMonteCarlo.monteCarlo.scenarioCount, savedMonteCarlo.monteCarlo.years, savedMonteCarlo.series, savedMonteCarlo.monteCarlo.seed);
+  const expectedMonteCarlo = runMonteCarlo(savedMonteCarlo.monteCarlo.scenarioCount, savedMonteCarlo.monteCarlo.years, savedMonteCarlo.monteCarlo.sourceSeries, savedMonteCarlo.monteCarlo.seed);
   assert.deepEqual(JSON.parse(JSON.stringify(loadedMonteCarlo.monteCarlo)), JSON.parse(JSON.stringify(expectedMonteCarlo)));
 
   reloaded.nav[5].listeners.click();
