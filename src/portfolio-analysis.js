@@ -11,7 +11,7 @@ function validateAssetSeries(symbol, series) {
   for (let index = 0; index < series.values.length; index += 1) {
     const date = series.labels[index];
     const value = series.values[index];
-    if (typeof date !== 'string' || !/^\\d{4}-\\d{2}-\\d{2}$/.test(date) || date <= previousDate) {
+    if (typeof date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(date) || date <= previousDate) {
       return `${symbol} dates must be unique, ascending YYYY-MM-DD labels.`;
     }
     const parsed = new Date(`${date}T00:00:00.000Z`);
