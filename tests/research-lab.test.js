@@ -4,6 +4,7 @@ import test from 'node:test';
 import vm from 'node:vm';
 import { calculatePerformance, generateSeries, runMonteCarlo } from '../src/data.js';
 import * as policy from '../src/strategy-analysis.js';
+import { SUPPORTED_HISTORICAL_SYMBOLS, toPriceSeries } from '../src/market-data.js';
 import * as research from '../src/research-engine.js';
 import { createSimulationController, createSyntheticSimulation } from '../src/simulation-engine.js';
 import { runWalkForwardValidation } from '../src/walk-forward.js';
@@ -72,6 +73,8 @@ async function bootApplication(storage) {
     runMonteCarlo,
     ...policy,
     ...research,
+    SUPPORTED_HISTORICAL_SYMBOLS,
+    toPriceSeries,
     runWalkForwardValidation,
     createPriceChart: () => chart,
     createLiveSimulationChart: () => chart,
