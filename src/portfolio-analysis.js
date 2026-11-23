@@ -89,7 +89,7 @@ export function calculateDiversificationPortfolio(assetSeries, {
 
   const assetReturns = Object.fromEntries(symbols.map((symbol) => [
     symbol,
-    commonDates.map((date) => returnMaps[symbol][date]),
+    commonDates.map((date) => returnMaps[symbol].get(date)),
   ]));
   const correlations = symbols.map((symbol) => ({
     symbol,
