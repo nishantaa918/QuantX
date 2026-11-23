@@ -104,6 +104,8 @@ test('backtest and Monte Carlo experiments reload reproducibly and can be delete
   assert.match(app.getElement('#secondary-view').innerHTML, /Walk-forward testing/);
   assert.match(app.getElement('#secondary-view').innerHTML, /Historical symbol/);
   assert.match(app.getElement('#secondary-view').innerHTML, /MSFT/);
+  assert.match(app.getElement('#secondary-view').innerHTML, /Historical price basis/);
+  assert.match(app.getElement('#secondary-view').innerHTML, /Adjusted close/);
   app.getElement('#walk-forward-train').value = '60';
   app.getElement('#walk-forward-test').value = '20';
   app.getElement('#walk-forward-step').value = '20';
@@ -112,6 +114,7 @@ test('backtest and Monte Carlo experiments reload reproducibly and can be delete
   app.getElement('#backtest-seed').value = '0';
   app.getElement('#commission-bps').value = '1';
   app.getElement('#slippage-bps').value = '5';
+  app.getElement('#backtest-price-basis').value = 'raw';
   clickAction(app, 'run-backtest');
 
   let storedRuns = JSON.parse(storage.get('quantx.midnight.experiments'));
