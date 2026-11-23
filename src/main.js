@@ -51,6 +51,7 @@ let liveSimulationController;
 let liveSimulationHistoryWindow = 60;
 let historicalMarketData = null;
 let selectedHistoricalSymbol = 'AAPL';
+let selectedPriceBasis = 'raw';
 let historicalMarketChart;
 let historicalLoadState = 'idle';
 let historicalLoadError = '';
@@ -125,7 +126,7 @@ function hydrateExperiment(stored) {
       : { ...strategyConfig };
   const dataSource = stored.dataSource === 'historical' && Array.isArray(stored.series?.observations) ? 'historical' : 'synthetic';
   const series = dataSource === 'historical'
-    ? toPriceSeries(stored.series.observations, { symbol: stored.symbol ?? stored.series.symbol ?? 'AAPL' })
+    ? toPriceSeries(stored.series.observations, { symbol: stored.symbol ?? stored.series.symbol ?? 'AAPL', priceBasis: stored.priceBasis ?? stored.series.priceBasis ?? 'raw' })
     : generateSeries(period, seed);
   const storedExecutionCosts = stored.executionCosts && typeof stored.executionCosts === 'object' ? { ...DEFAULT_EXECUTION_COSTS, ...stored.executionCosts } : { ...executionCosts };
   const backtest = calculateStrategyBacktest(series, strategy, 100_000, storedExecutionCosts);
@@ -197,7 +198,7 @@ function saveGuardrailPreferences() {
   try { localStorage.setItem(GUARDRAIL_STORAGE_KEY, JSON.stringify(guardrailThresholds)); } catch { showToast('Risk thresholds could not be saved in this browser.'); }
 }
 
-function createExperimentRecord({ name, kind, series, strategy = strategyConfig, seed = simulationSeed, monteCarlo = null, dataSource = 'synthetic', symbol = null }) {
+function createExperimentRecord({ name, kind, series, strategy = strategyConfig, seed = simulationSeed, monteCarlo = null, dataSource = 'synthetic', symbol = null, priceBasis = 'raw' }) {
   const backtest = calculateStrategyBacktest(series, strategy, 100_000, executionCosts);
   const guardrails = evaluateRiskGuardrails(backtest, guardrailThresholds);
   const diagnostics = evaluatePolicyDiagnostics(series, strategy, backtest, guardrails);
@@ -211,6 +212,7 @@ function createExperimentRecord({ name, kind, series, strategy = strategyConfig,
     strategyName: getStrategyName(strategy.type),
     dataSource,
     symbol: dataSource === 'historical' ? symbol ?? series.symbol : null,
+    priceBasis: dataSource === 'historical' ? priceBasis : null,
     strategyConfig: { ...strategy },
     guardrailThresholds: { ...guardrailThresholds },
     executionCosts: { ...executionCosts },
@@ -541,19 +543,23 @@ function renderMarketsPage() {
     <p class="disclaimer-line"><span class="status-pulse"></span>${currentSeries.period === 'HISTORICAL' ? 'Historical provider observations are shown separately; replayed portfolio values remain simulated.' : 'Market series and replay values are synthetic. No live market feed is connected.'}</p>`;
 }
 
+function priceBasisOptions(selected = 'raw') {
+  return `<option value="raw" ${selected === 'raw' ? 'selected' : ''}>Raw close</option><option value="adjusted" ${selected === 'adjusted' ? 'selected' : ''}>Adjusted close</option>`;
+}
+
 function historicalSymbolOptions(selected = selectedHistoricalSymbol) {
   return SUPPORTED_HISTORICAL_SYMBOLS.map((symbol) => `<option value="${symbol}" ${symbol === selected ? 'selected' : ''}>${symbol}</option>`).join('');
 }
 
 function renderHistoricalMarketPanel() {
   return `<section class="panel page-panel historical-market-panel" aria-labelledby="historical-market-title">
-    <div class="panel-heading"><div><p class="section-kicker">ALPHA VANTAGE / DAILY / RAW</p><h2 id="historical-market-title">Historical prices</h2></div><div class="historical-status-line"><label class="field-label historical-symbol-label" for="historical-symbol-select">SYMBOL<select id="historical-symbol-select" data-historical-symbol>${historicalSymbolOptions()}</select></label><span class="historical-badge" id="historical-market-status">NOT LOADED</span><button class="secondary-button" id="historical-market-load" type="button" data-action="load-historical-data">Load selected history</button></div></div>
+    <div class="panel-heading"><div><p class="section-kicker">ALPHA VANTAGE / DAILY / RAW</p><h2 id="historical-market-title">Historical prices</h2></div><div class="historical-status-line"><label class="field-label historical-symbol-label" for="historical-symbol-select">SYMBOL<select id="historical-symbol-select" data-historical-symbol>${historicalSymbolOptions()}</select></label><label class="field-label historical-symbol-label" for="historical-price-basis">PRICE BASIS<select id="historical-price-basis">${priceBasisOptions(selectedPriceBasis)}</select></label><span class="historical-badge" id="historical-market-status">NOT LOADED</span><button class="secondary-button" id="historical-market-load" type="button" data-action="load-historical-data">Load selected history</button></div></div>
     <p class="panel-subtitle historical-disclaimer">Historical daily OHLCV is provider data when available. The selected series is kept separate from synthetic simulations.</p>
     <p class="form-error" id="historical-market-error" aria-live="polite"></p>
     <div id="historical-market-content" hidden>
-      <div class="historical-metadata"><span>SYMBOL <strong id="historical-symbol">${selectedHistoricalSymbol}</strong></span><span>PROVIDER <strong id="historical-provider">Alpha Vantage</strong></span><span>FREQUENCY <strong>1D</strong></span><span>ADJUSTMENT <strong>RAW / UNADJUSTED</strong></span><span>EXCHANGE <strong id="historical-exchange">Not provided</strong></span><span>CURRENCY <strong id="historical-currency">Not provided</strong></span><span>UPDATED <strong id="historical-updated">--</strong></span></div>
+      <div class="historical-metadata"><span>SYMBOL <strong id="historical-symbol">${selectedHistoricalSymbol}</strong></span><span>PROVIDER <strong id="historical-provider">Alpha Vantage</strong></span><span>FREQUENCY <strong>1D</strong></span><span>PRICE BASIS <strong id="historical-adjustment">RAW CLOSE</strong></span><span>EXCHANGE <strong id="historical-exchange">Not provided</strong></span><span>CURRENCY <strong id="historical-currency">Not provided</strong></span><span>UPDATED <strong id="historical-updated">--</strong></span></div>
       <div class="historical-chart-frame"><canvas id="historical-price-chart" role="img" aria-label="Historical daily raw closing prices from Alpha Vantage"></canvas></div>
-      <div class="table-scroll historical-table-scroll"><table class="workspace-table historical-table"><thead><tr><th>DATE</th><th>OPEN</th><th>HIGH</th><th>LOW</th><th>CLOSE</th><th>VOLUME</th><th>FREQUENCY</th><th>ADJUSTMENT</th></tr></thead><tbody id="historical-observations"></tbody></table></div>
+      <div class="table-scroll historical-table-scroll"><table class="workspace-table historical-table"><thead><tr><th>DATE</th><th>OPEN</th><th>HIGH</th><th>LOW</th><th>RAW CLOSE</th><th>ADJUSTED CLOSE</th><th>DIVIDEND</th><th>SPLIT</th><th>VOLUME</th><th>FREQUENCY</th><th>ADJUSTMENT</th></tr></thead><tbody id="historical-observations"></tbody></table></div>
     </div>
     <p class="historical-load-message" id="historical-market-message">No historical response loaded. Configure the server key to request the selected symbol's daily data.</p>
   </section>`;
@@ -582,30 +588,32 @@ function mountHistoricalMarketData() {
   document.querySelector('#historical-symbol').textContent = data.symbol;
   selectedHistoricalSymbol = data.symbol;
   document.querySelector('#historical-provider').textContent = 'Alpha Vantage';
+  document.querySelector('#historical-adjustment').textContent = selectedPriceBasis === 'adjusted' ? 'ADJUSTED CLOSE' : 'RAW CLOSE';
   document.querySelector('#historical-exchange').textContent = data.exchange ?? 'Not provided by daily endpoint';
   document.querySelector('#historical-currency').textContent = data.currency ?? 'Not provided by daily endpoint';
   document.querySelector('#historical-updated').textContent = new Date(lastUpdated).toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' });
   document.querySelector('#historical-observations').innerHTML = [...data.observations].reverse().map((observation) => `
-    <tr><td>${escapeHTML(observation.date)}</td><td>${observation.open.toFixed(2)}</td><td>${observation.high.toFixed(2)}</td><td>${observation.low.toFixed(2)}</td><td>${observation.close.toFixed(2)}</td><td>${observation.volume.toLocaleString('en-US')}</td><td>1d</td><td>Raw</td></tr>`).join('');
+    <tr><td>${escapeHTML(observation.date)}</td><td>${observation.open.toFixed(2)}</td><td>${observation.high.toFixed(2)}</td><td>${observation.low.toFixed(2)}</td><td>${observation.close.toFixed(2)}</td><td>${Number.isFinite(observation.adjustedClose) ? observation.adjustedClose.toFixed(2) : '—'}</td><td>${(observation.dividendAmount ?? 0).toFixed(4)}</td><td>${observation.splitCoefficient ?? '—'}</td><td>${observation.volume.toLocaleString('en-US')}</td><td>1d</td><td>${escapeHTML(observation.adjustment ?? 'raw')}</td></tr>`).join('');
   historicalMarketChart?.destroy();
-  historicalMarketChart = createHistoricalPriceChart(document.querySelector('#historical-price-chart'), data.observations);
+  historicalMarketChart = createHistoricalPriceChart(document.querySelector('#historical-price-chart'), data.observations.map((observation) => ({ ...observation, close: selectedPriceBasis === 'adjusted' ? observation.adjustedClose : observation.close })));
   renderHistoricalMarketState();
 }
 
 async function loadHistoricalMarketData() {
   if (historicalLoadState === 'loading') return;
   const symbol = selectedHistoricalSymbol;
+  const priceBasis = selectedPriceBasis;
   historicalLoadState = 'loading';
   historicalLoadError = '';
   renderHistoricalMarketState();
   try {
-    const response = await fetch(`/api/market-data/daily?symbol=${encodeURIComponent(symbol)}`, { headers: { Accept: 'application/json' } });
+    const response = await fetch(`/api/market-data/daily?symbol=${encodeURIComponent(symbol)}&adjustment=${priceBasis}`, { headers: { Accept: 'application/json' } });
     const payload = await response.json();
     if (!response.ok) {
       historicalLoadState = payload.status === 'unavailable' ? 'unavailable' : 'error';
       throw new Error(payload.message || `Historical request failed (${response.status}).`);
     }
-    if (payload.status !== 'historical' || payload.data?.symbol !== symbol || !Array.isArray(payload.data.observations) || !payload.data.observations.length) {
+    if (payload.status !== 'historical' || payload.data?.symbol !== symbol || payload.data?.requestedAdjustment !== priceBasis || !Array.isArray(payload.data.observations) || !payload.data.observations.length) {
       historicalLoadState = 'error';
       throw new Error('The server returned no valid daily observations for the selected symbol.');
     }
@@ -637,7 +645,7 @@ function renderStrategiesPage() {
 function renderBacktestingPage() {
   return `${renderPageIntro('HISTORICAL SIMULATION', 'Backtest & policy review', 'Run the selected strategy on reproducible synthetic prices or real historical daily closes.')}
     <section class="panel page-panel"><div class="panel-heading"><div><p class="section-kicker">RUN PARAMETERS</p><h2>Backtest setup</h2></div><span class="sim-tag">SYNTHETIC / HISTORICAL</span></div>
-      <div class="form-grid"><label class="field-label" for="backtest-data-source">Data source<select id="backtest-data-source"><option value="synthetic">Synthetic price history</option><option value="historical">Historical daily closes</option></select></label><label class="field-label" for="backtest-symbol">Historical symbol<select id="backtest-symbol" data-historical-symbol>${historicalSymbolOptions()}</select></label><label class="field-label" for="backtest-period">Synthetic period<select id="backtest-period">${periodOptions(currentPeriod)}</select></label><label class="field-label" for="backtest-seed">Synthetic seed<input id="backtest-seed" type="number" min="0" step="1" value="${simulationSeed}" /></label><div class="field-action"><button class="primary-button" type="button" data-action="run-backtest"><span data-icon="Activity"></span> Run backtest</button></div></div>
+      <div class="form-grid"><label class="field-label" for="backtest-data-source">Data source<select id="backtest-data-source"><option value="synthetic">Synthetic price history</option><option value="historical">Historical daily closes</option></select></label><label class="field-label" for="backtest-symbol">Historical symbol<select id="backtest-symbol" data-historical-symbol>${historicalSymbolOptions()}</select></label><label class="field-label" for="backtest-price-basis">Historical price basis<select id="backtest-price-basis">${priceBasisOptions(selectedPriceBasis)}</select></label><label class="field-label" for="backtest-period">Synthetic period<select id="backtest-period">${periodOptions(currentPeriod)}</select></label><label class="field-label" for="backtest-seed">Synthetic seed<input id="backtest-seed" type="number" min="0" step="1" value="${simulationSeed}" /></label><div class="field-action"><button class="primary-button" type="button" data-action="run-backtest"><span data-icon="Activity"></span> Run backtest</button></div></div>
       <div class="execution-cost-grid"><label class="field-label" for="commission-bps">Commission (bps / turnover)<input id="commission-bps" type="number" min="0" max="100" step="0.1" value="${executionCosts.commissionBps}" /></label><label class="field-label" for="slippage-bps">Slippage (bps / turnover)<input id="slippage-bps" type="number" min="0" max="100" step="0.1" value="${executionCosts.slippageBps}" /></label></div>
       <p class="table-note">Historical mode fetches daily observations for the selected allowlisted US equity or ETF from the existing server proxy. Execution costs are illustrative basis-point assumptions charged on next-session turnover; they are not broker quotes. Period and seed apply only to synthetic mode.</p>
       <p class="panel-subtitle active-strategy-label">Active strategy: <strong>${escapeHTML(getStrategyName(strategyConfig.type))}</strong> / MA ${strategyConfig.shortWindow} - ${strategyConfig.longWindow}</p><p class="form-error" id="backtest-run-error" aria-live="polite"></p>
@@ -880,7 +888,9 @@ async function runBacktest() {
   const seedValue = Number(document.querySelector('#backtest-seed').value);
   const dataSource = document.querySelector('#backtest-data-source').value;
   const symbol = document.querySelector('#backtest-symbol').value;
+  const priceBasis = document.querySelector('#backtest-price-basis').value;
   selectedHistoricalSymbol = symbol;
+  selectedPriceBasis = priceBasis;
   const costValidation = validateExecutionCosts({ commissionBps: Number(document.querySelector('#commission-bps').value), slippageBps: Number(document.querySelector('#slippage-bps').value) });
   const error = document.querySelector('#backtest-run-error');
   const validation = validateStrategyParameters(strategyConfig);
@@ -902,16 +912,16 @@ async function runBacktest() {
   let series;
   if (dataSource === 'historical') {
     try {
-      if (historicalMarketData?.data?.symbol !== symbol || !historicalMarketData?.data?.observations?.length) {
-        const response = await fetch(`/api/market-data/daily?symbol=${encodeURIComponent(symbol)}`, { headers: { Accept: 'application/json' } });
+      if (historicalMarketData?.data?.symbol !== symbol || historicalMarketData?.data?.requestedAdjustment !== priceBasis || !historicalMarketData?.data?.observations?.length) {
+        const response = await fetch(`/api/market-data/daily?symbol=${encodeURIComponent(symbol)}&adjustment=${priceBasis}`, { headers: { Accept: 'application/json' } });
         const payload = await response.json();
         if (!response.ok) throw new Error(payload.message || `Historical request failed (${response.status}).`);
-        if (payload.status !== 'historical' || payload.data?.symbol !== symbol || !Array.isArray(payload.data.observations)) {
+        if (payload.status !== 'historical' || payload.data?.symbol !== symbol || payload.data?.requestedAdjustment !== priceBasis || !Array.isArray(payload.data.observations)) {
           throw new Error('The server returned no valid daily observations for the selected symbol.');
         }
         historicalMarketData = payload;
       }
-      series = toPriceSeries(historicalMarketData.data.observations, { symbol: historicalMarketData.data.symbol });
+      series = toPriceSeries(historicalMarketData.data.observations, { symbol: historicalMarketData.data.symbol, priceBasis });
     } catch (requestError) {
       error.textContent = requestError.message || 'Could not load historical data for the selected symbol.';
       showToast('Historical backtest not run. Check the market-data connection.');
@@ -940,6 +950,7 @@ async function runBacktest() {
     seed: seedValue,
     dataSource,
     symbol: dataSource === 'historical' ? currentSeries.symbol : null,
+    priceBasis: dataSource === 'historical' ? priceBasis : 'raw',
   });
   addExperiment(record);
   refreshCoveragePanels();
@@ -1242,6 +1253,14 @@ secondaryView.addEventListener('input', (event) => {
 });
 
 secondaryView.addEventListener('change', (event) => {
+  if (event.target.id === 'historical-price-basis') {
+    selectedPriceBasis = event.target.value;
+    historicalMarketData = null;
+    historicalLoadState = 'idle';
+    historicalLoadError = '';
+    renderHistoricalMarketState();
+  }
+  if (event.target.id === 'backtest-price-basis') selectedPriceBasis = event.target.value;
   if (event.target.dataset.historicalSymbol !== undefined) {
     selectedHistoricalSymbol = event.target.value;
     historicalMarketData = null;
