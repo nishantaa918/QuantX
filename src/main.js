@@ -50,7 +50,6 @@ let liveSimulationChart;
 let liveSimulationController;
 let liveSimulationHistoryWindow = 60;
 let historicalMarketData = null;
-let historicalSymbol = 'AAPL';
 let selectedHistoricalSymbol = 'AAPL';
 let historicalMarketChart;
 let historicalLoadState = 'idle';
@@ -1163,7 +1162,7 @@ document.addEventListener('click', (event) => {
 
 secondaryView.addEventListener('change', (event) => {
   if (event.target.id === 'historical-symbol-select') {
-    historicalSymbol = event.target.value;
+    selectedHistoricalSymbol = event.target.value;
     historicalMarketData = null;
     historicalLoadState = 'idle';
     historicalLoadError = '';
