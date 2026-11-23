@@ -46,7 +46,7 @@ function correlation(left, right) {
     leftVariance += x * x;
     rightVariance += y * y;
   }
-  if (leftVariance === 0 || rightVariance === 0) return null;
+  if (leftVariance < 1e-20 || rightVariance < 1e-20) return null;
   return Math.max(-1, Math.min(1, covariance / Math.sqrt(leftVariance * rightVariance)));
 }
 
