@@ -41,7 +41,8 @@ test('Alpha Vantage normalization sorts dates, removes duplicates, and preserves
   assert.deepEqual(normalized.map((row) => row.date), ['2025-01-01', '2025-01-02', '2025-01-03']);
   assert.deepEqual(normalized[0], {
     symbol: 'AAPL', date: '2025-01-01', open: 100, high: 102, low: 99, close: 101,
-    volume: 100, source: 'alpha_vantage', frequency: '1d', adjustment: 'raw',
+    volume: 100, adjustedClose: null, dividendAmount: 0, splitCoefficient: null,
+    source: 'alpha_vantage', frequency: '1d', adjustment: 'raw',
   });
   const payload = normalizeAlphaVantageDaily(dailyPayload());
   assert.equal(payload.adjustment, 'raw');
