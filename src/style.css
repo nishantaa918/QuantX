@@ -554,3 +554,23 @@ table { width: 100%; border-collapse: collapse; text-align: left; }
 
 .downside-risk-diagnostics { margin-top: 14px; }
 .downside-risk-diagnostics .section-kicker { margin-bottom: 8px; }
+
+.portfolio-lab-panel { margin-top: 16px; }
+.portfolio-asset-picker { display: grid; grid-template-columns: repeat(auto-fit, minmax(125px, 1fr)); gap: 9px; padding: 15px 0; border-top: 1px solid var(--border); }
+.portfolio-asset-option { display: flex; align-items: center; gap: 9px; min-width: 0; padding: 10px; border: 1px solid var(--border); background: rgba(7, 12, 17, .28); cursor: pointer; }
+.portfolio-asset-option input { accent-color: var(--accent); }
+.portfolio-asset-option span { display: grid; gap: 3px; min-width: 0; }
+.portfolio-asset-option strong { font-family: var(--font-mono); font-size: 11px; color: var(--text); }
+.portfolio-asset-option small { color: var(--subtle); font-size: 9px; }
+.portfolio-lab-actions { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 10px 0 14px; border-bottom: 1px solid var(--border); }
+.portfolio-lab-actions .table-note { margin: 0; max-width: 620px; }
+.portfolio-analysis-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr); gap: 18px; margin-top: 18px; }
+.portfolio-analysis-grid > section { min-width: 0; }
+.correlation-table { min-width: 300px; }
+.correlation-table th, .correlation-table td { padding: 10px 12px; text-align: right; }
+.correlation-table th:first-child { text-align: left; }
+@media (max-width: 760px) {
+  .portfolio-analysis-grid { grid-template-columns: minmax(0, 1fr); gap: 14px; }
+  .portfolio-lab-actions { align-items: stretch; flex-direction: column; }
+  .portfolio-lab-actions .primary-button { width: 100%; }
+}
