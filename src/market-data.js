@@ -111,7 +111,7 @@ export function toPriceSeries(observations, { symbol = 'AAPL', priceBasis = 'raw
       priceBasis === 'adjusted' ? 'adjusted close' : 'close',
       observation.date,
     );
-    return { ...observation, symbol: normalizedSymbol, rawClose: observation.close, close, adjustment: priceBasis };
+    return { ...observation, symbol: normalizedSymbol, rawClose: observation.rawClose ?? observation.close, close, adjustment: priceBasis };
   });
   return {
     period: 'HISTORICAL',

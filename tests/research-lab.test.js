@@ -170,3 +170,55 @@ test('backtest and Monte Carlo experiments reload reproducibly and can be delete
   assert.equal(vm.runInContext('latestBacktestSeries', reloaded.context), null);
   assert.equal(vm.runInContext('currentGuardrails.status', reloaded.context), 'PENDING');
 });
+
+
+test('adjusted historical backtests use adjusted closes and preserve their basis after reload', async () => {
+  const storage = new Map();
+  const app = await bootApplication(storage);
+  app.nav[3].listeners.click();
+  app.getElement('#backtest-data-source').value = 'historical';
+  app.getElement('#backtest-symbol').value = 'AAPL';
+  app.getElement('#backtest-adjustment').value = 'adjusted';
+  app.getElement('#commission-bps').value = '1';
+  app.getElement('#slippage-bps').value = '5';
+
+  const observations = Array.from({ length: 40 }, (_, index) => {
+    const date = new Date(Date.UTC(2025, 0, index + 1)).toISOString().slice(0, 10);
+    const close = 100 + index;
+    return {
+      symbol: 'AAPL', date, open: close, high: close + 1, low: close - 1,
+      close, adjustedClose: 90 + index * 0.9, volume: 1_000_000,
+      dividendAmount: index === 20 ? 0.25 : 0,
+      splitCoefficient: 1,
+      source: 'alpha_vantage', frequency: '1d', adjustment: 'raw',
+    };
+  });
+  let requestedUrl = '';
+  app.context.fetch = async (url) => {
+    requestedUrl = url;
+    return {
+      ok: true,
+      json: async () => ({
+        status: 'historical',
+        data: { symbol: 'AAPL', requestedAdjustment: 'adjusted', observations },
+        lastUpdated: '2025-02-10T00:00:00.000Z',
+      }),
+    };
+  };
+
+  await app.context.runBacktest();
+  assert.match(requestedUrl, /adjustment=adjusted/);
+  const savedRuns = JSON.parse(storage.get('quantx.midnight.experiments'));
+  const saved = savedRuns.find((run) => run.kind === 'backtest');
+  assert.ok(saved);
+  assert.equal(saved.series.priceBasis, 'adjusted');
+  assert.equal(saved.series.observations[0].rawClose, 100);
+  assert.equal(saved.series.observations[0].close, 90);
+  assert.equal(saved.series.observations[0].adjustment, 'adjusted');
+
+  const reloaded = await bootApplication(storage);
+  const loaded = vm.runInContext('experiments.find((run) => run.kind === "backtest")', reloaded.context);
+  assert.equal(loaded.series.priceBasis, 'adjusted');
+  assert.equal(loaded.series.values[0], 90);
+  assert.equal(loaded.series.observations[0].rawClose, 100);
+});
