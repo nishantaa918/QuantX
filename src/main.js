@@ -21,6 +21,7 @@ import {
 import { createReplayController } from './replay-controller.js';
 import { createSimulationController, createSyntheticSimulation } from './simulation-engine.js';
 import { analyzeStrategyBacktest, detectMarketRegimes, testMomentumHypothesis } from './research-engine.js';
+import { runWalkForwardValidation } from './walk-forward.js';
 
 const STORAGE_KEY = 'quantx.midnight.experiments';
 const STRATEGY_STORAGE_KEY = 'quantx.midnight.strategy';
@@ -640,7 +641,31 @@ function renderBacktestingPage() {
       <div class="threshold-grid">${thresholdField('risk-max-drawdown', 'maxDrawdown', 'Maximum drawdown', guardrailThresholds.maxDrawdown, 0.1, 100)}${thresholdField('risk-max-volatility', 'maxVolatility', 'Annualized volatility', guardrailThresholds.maxVolatility, 0.1, 300)}${thresholdField('risk-max-exposure', 'maxExposure', 'Maximum position exposure', guardrailThresholds.maxExposure, 0.1, 100)}${thresholdField('risk-loss-limit', 'lossLimit', 'Single-session loss limit', guardrailThresholds.lossLimit, 0.1, 100)}</div>
       <p class="form-error" id="guardrail-config-error" aria-live="polite"></p><button class="secondary-button" type="button" data-action="save-guardrails">Save thresholds</button><div id="backtest-guardrail-results" class="guardrail-results">${renderGuardrailChecks(currentGuardrails)}</div>
     </section>
+    ${renderWalkForwardPanel()}
     <section id="backtest-diagnostics">${renderDiagnosticsPanel(currentDiagnostics, 'Policy diagnostics', latestBacktest ?? currentBacktest)}</section>`;
+}
+
+function renderWalkForwardResults(result) {
+  if (!result?.valid) return `<p class="empty-state">${escapeHTML(result?.error ?? 'Run walk-forward validation to calculate out-of-sample results.')}</p>`;
+  const foldRows = result.folds.map((fold) => `<tr><td>${fold.number}</td><td>${escapeHTML(fold.trainStart)} – ${escapeHTML(fold.trainEnd)}</td><td>${escapeHTML(fold.testStart)} – ${escapeHTML(fold.testEnd)}</td><td>MA ${fold.selectedParameters.shortWindow} / ${fold.selectedParameters.longWindow}</td><td class="mono-cell">${fold.trainingScore.toFixed(2)}</td><td class="mono-cell ${fold.testMetrics.totalReturn >= 0 ? 'is-positive' : 'is-negative'}">${fold.testMetrics.totalReturn >= 0 ? '+' : ''}${fold.testMetrics.totalReturn.toFixed(2)}%</td><td class="mono-cell">${fold.transactionCostsUSD.toFixed(2)}</td></tr>`).join('');
+  return `<div class="result-summary"><div><span>OUT-OF-SAMPLE RETURN</span><strong class="${result.metrics.totalReturn >= 0 ? 'is-positive' : 'is-negative'}">${result.metrics.totalReturn >= 0 ? '+' : ''}${result.metrics.totalReturn.toFixed(2)}%</strong></div><div><span>BUY & HOLD RETURN</span><strong>${result.benchmarkMetrics.totalReturn >= 0 ? '+' : ''}${result.benchmarkMetrics.totalReturn.toFixed(2)}%</strong></div><div><span>OOS SHARPE</span><strong>${result.metrics.sharpeRatio.toFixed(2)}</strong></div><div><span>ESTIMATED COSTS</span><strong>${result.totalTransactionCostsUSD.toFixed(2)}</strong></div></div>
+    <div class="table-scroll"><table class="workspace-table walk-forward-table"><thead><tr><th>FOLD</th><th>TRAIN WINDOW</th><th>TEST WINDOW</th><th>SELECTED POLICY</th><th>TRAIN SCORE</th><th>TEST RETURN</th><th>TEST COSTS</th></tr></thead><tbody>${foldRows}</tbody></table></div>
+    <p class="result-caption">${result.folds.length} completed folds / ${result.outOfSampleObservations} out-of-sample observations / ${result.candidateCount} candidate configurations per fold. Parameters are selected using training data only.</p>
+    <p class="research-caveat">${result.caveats.map(escapeHTML).join(' ')}</p>`;
+}
+
+function renderWalkForwardPanel() {
+  return `<section class="panel page-panel walk-forward-panel"><div class="panel-heading"><div><p class="section-kicker">OUT-OF-SAMPLE VALIDATION</p><h2>Walk-forward testing</h2><p class="panel-subtitle">Select parameters on earlier observations, then test them on the next unseen window.</p></div><span class="sim-tag">ROLLING ORIGIN</span></div>
+    <div class="walk-forward-controls">
+      <label class="field-label" for="walk-forward-train">Training window<input id="walk-forward-train" type="number" min="30" max="252" step="10" value="60" /></label>
+      <label class="field-label" for="walk-forward-test">Test window<input id="walk-forward-test" type="number" min="5" max="63" step="5" value="20" /></label>
+      <label class="field-label" for="walk-forward-step">Step<input id="walk-forward-step" type="number" min="5" max="252" step="5" value="20" /></label>
+      <label class="field-label" for="walk-forward-objective">Selection objective<select id="walk-forward-objective"><option value="sharpeRatio">Training Sharpe</option><option value="totalReturn">Training total return</option></select></label>
+      <div class="field-action"><button class="primary-button" type="button" data-action="run-walk-forward">Run walk-forward</button></div>
+    </div>
+    <p class="table-note">Tests a fixed 3 × 3 moving-average candidate grid (short: 3, 5, 8 / long: 15, 20, 30). Uses the selected backtest's current execution-cost assumptions. Run a longer 3M/1Y or historical backtest first; short samples may not contain enough folds.</p>
+    <div id="walk-forward-results"><p class="empty-state">No walk-forward validation has been run for this workspace yet.</p></div>
+  </section>`;
 }
 
 function renderMonteCarloPage() {
@@ -1132,6 +1157,23 @@ secondaryView.addEventListener('click', (event) => {
   const action = actionButton.dataset.action;
   if (action === 'load-historical-data') loadHistoricalMarketData();
   if (action === 'run-backtest') runBacktest();
+  if (action === 'run-walk-forward') {
+    const sourceSeries = latestBacktestSeries ?? currentSeries;
+    const trainWindow = Number(document.querySelector('#walk-forward-train').value);
+    const testWindow = Number(document.querySelector('#walk-forward-test').value);
+    const step = Number(document.querySelector('#walk-forward-step').value);
+    const selectionMetric = document.querySelector('#walk-forward-objective').value;
+    const result = runWalkForwardValidation(sourceSeries, {
+      trainWindow,
+      testWindow,
+      step,
+      selectionMetric,
+      baseParameters: strategyConfig,
+      executionCosts,
+    });
+    document.querySelector('#walk-forward-results').innerHTML = renderWalkForwardResults(result);
+    showToast(result.valid ? `Walk-forward validation completed: ${result.folds.length} folds.` : 'Walk-forward validation could not be completed.');
+  }
   if (action === 'run-research-analysis') {
     const selected = experiments.find((experiment) => experiment.id === selectedExperimentId) ?? experiments[0] ?? null;
     const options = {
