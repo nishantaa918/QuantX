@@ -22,6 +22,7 @@ import { createReplayController } from './replay-controller.js';
 import { createSimulationController, createSyntheticSimulation } from './simulation-engine.js';
 import { analyzeStrategyBacktest, detectMarketRegimes, testMomentumHypothesis } from './research-engine.js';
 import { runWalkForwardValidation } from './walk-forward.js';
+import { calculateDiversificationPortfolio } from './portfolio-analysis.js';
 
 const STORAGE_KEY = 'quantx.midnight.experiments';
 const STRATEGY_STORAGE_KEY = 'quantx.midnight.strategy';
@@ -69,6 +70,7 @@ let replayController;
 let replayReadiness;
 let toastTimeout;
 let selectedExperimentId = null;
+let latestPortfolioAnalysis = null;
 
 const overviewView = document.querySelector('#overview-view');
 const secondaryView = document.querySelector('#secondary-view');
@@ -690,6 +692,39 @@ function renderMonteCarloPage() {
     <p class="disclaimer-line"><span class="status-pulse"></span>Scenario outputs are synthetic and are not forecasts.</p>`;
 }
 
+function getHistoricalPortfolioExperiments() {
+  const latestBySymbol = new Map();
+  for (const experiment of experiments) {
+    if (experiment.kind !== 'backtest' || experiment.dataSource !== 'historical' || !experiment.symbol || !Array.isArray(experiment.series?.values)) continue;
+    const symbol = experiment.symbol.toUpperCase();
+    if (!latestBySymbol.has(symbol)) latestBySymbol.set(symbol, experiment);
+  }
+  return [...latestBySymbol.values()].sort((left, right) => left.symbol.localeCompare(right.symbol));
+}
+
+function renderPortfolioAnalysisResults(result) {
+  if (!result?.valid) return `<p class="empty-state">${escapeHTML(result?.errors?.join(' ') ?? 'Select at least two historical assets to begin.')}</p>`;
+  const matrix = result.correlations.map((row) => `<tr><th>${escapeHTML(row.symbol)}</th>${row.values.map((value) => `<td class="mono-cell">${value === null ? '—' : value.toFixed(2)}</td>`).join('')}</tr>`).join('');
+  const assets = result.assetPerformance.map((asset) => `<tr><td>${escapeHTML(asset.symbol)}</td><td class="mono-cell">${asset.metrics.totalReturn >= 0 ? '+' : ''}${asset.metrics.totalReturn.toFixed(2)}%</td><td class="mono-cell">${asset.metrics.annualizedVolatility.toFixed(2)}%</td><td class="mono-cell">${asset.averageDailyContribution.toFixed(3)}%</td></tr>`).join('');
+  return `<div class="result-summary"><div><span>NET PORTFOLIO RETURN</span><strong class="${result.metrics.totalReturn >= 0 ? 'is-positive' : 'is-negative'}">${result.metrics.totalReturn >= 0 ? '+' : ''}${result.metrics.totalReturn.toFixed(2)}%</strong></div><div><span>EQUAL-WEIGHT BUY & HOLD</span><strong>${result.benchmarkMetrics.totalReturn >= 0 ? '+' : ''}${result.benchmarkMetrics.totalReturn.toFixed(2)}%</strong></div><div><span>PORTFOLIO SHARPE</span><strong>${result.metrics.sharpeRatio.toFixed(2)}</strong></div><div><span>ESTIMATED COSTS</span><strong>${result.totalTransactionCostsUSD.toFixed(2)}</strong></div></div>
+    <div class="portfolio-analysis-grid"><section><p class="section-kicker">DAILY RETURN CORRELATION</p><div class="table-scroll"><table class="workspace-table correlation-table"><thead><tr><th>ASSET</th>${result.symbols.map((symbol) => `<th>${escapeHTML(symbol)}</th>`).join('')}</tr></thead><tbody>${matrix}</tbody></table></div></section><section><p class="section-kicker">ASSET PERFORMANCE / ALIGNED WINDOW</p><div class="table-scroll"><table class="workspace-table"><thead><tr><th>ASSET</th><th>RETURN</th><th>VOLATILITY</th><th>AVG DAILY CONTRIBUTION</th></tr></thead><tbody>${assets}</tbody></table></div></section></div>
+    <p class="result-caption">${result.observations} shared daily return observations / ${result.symbols.length} assets / ${result.totalTurnover.toFixed(2)}x cumulative portfolio turnover. Net results include the configured execution-cost assumptions.</p>
+    <p class="research-caveat">${result.caveats.map(escapeHTML).join(' ')}</p>`;
+}
+
+function renderPortfolioLabPanel() {
+  const available = getHistoricalPortfolioExperiments();
+  const options = available.map((experiment) => `<label class="portfolio-asset-option"><input type="checkbox" data-portfolio-symbol="${escapeHTML(experiment.symbol)}" checked /><span><strong>${escapeHTML(experiment.symbol)}</strong><small>${escapeHTML(experiment.series.priceBasis ?? 'raw')} / ${experiment.series.values.length} observations</small></span></label>`).join('');
+  const empty = available.length < 2
+    ? '<p class="empty-state">Save historical backtests for at least two different assets first. The latest saved run per ticker will be used.</p>'
+    : '';
+  return `<section class="panel page-panel portfolio-lab-panel"><div class="panel-heading"><div><p class="section-kicker">CROSS-ASSET RESEARCH</p><h2>Portfolio diversification lab</h2><p class="panel-subtitle">Compare historical return correlations and an equal-weight rebalanced portfolio against an equal-weight buy-and-hold basket.</p></div><span class="sim-tag">HISTORICAL ONLY</span></div>
+    <div class="portfolio-asset-picker">${options || '<p class="empty-state">No saved historical backtests are available yet.</p>'}</div>
+    <div class="portfolio-lab-actions"><p class="table-note">Uses the latest saved historical backtest per ticker and its selected raw or adjusted price basis. All assets are aligned on shared return dates.</p><button class="primary-button" type="button" data-action="run-portfolio-analysis" ${available.length < 2 ? 'disabled' : ''}>Analyse selected assets</button></div>
+    ${empty}<div id="portfolio-analysis-results">${renderPortfolioAnalysisResults(latestPortfolioAnalysis)}</div>
+  </section>`;
+}
+
 function renderResearchPage() {
   const selected = experiments.find((experiment) => experiment.id === selectedExperimentId) ?? experiments[0] ?? null;
   selectedExperimentId = selected?.id ?? null;
@@ -704,6 +739,7 @@ function renderResearchPage() {
     </section>
     <section class="panel page-panel experiment-analysis-panel"><div class="panel-heading"><div><p class="section-kicker">CALCULATED RESULTS</p><h2>Experiment analysis</h2></div></div>${analysis}</section>
     ${renderResearchIntelligencePanel(selected)}
+    ${renderPortfolioLabPanel()}
     ${renderPolicyHeatmap('sharpeRatio')}
     ${renderCoverageMonitor(null, 'Research coverage')}`;
 }
@@ -1172,6 +1208,18 @@ secondaryView.addEventListener('click', (event) => {
   const action = actionButton.dataset.action;
   if (action === 'load-historical-data') loadHistoricalMarketData();
   if (action === 'run-backtest') runBacktest();
+  if (action === 'run-portfolio-analysis') {
+    const selectedSymbols = [...document.querySelectorAll('[data-portfolio-symbol]:checked')].map((input) => input.dataset.portfolioSymbol);
+    const available = getHistoricalPortfolioExperiments();
+    const seriesBySymbol = Object.fromEntries(selectedSymbols.map((symbol) => {
+      const experiment = available.find((item) => item.symbol.toUpperCase() === symbol.toUpperCase());
+      return [symbol, experiment?.series];
+    }).filter(([, series]) => series));
+    latestPortfolioAnalysis = calculateDiversificationPortfolio(seriesBySymbol, { executionCosts });
+    const output = document.querySelector('#portfolio-analysis-results');
+    if (output) output.innerHTML = renderPortfolioAnalysisResults(latestPortfolioAnalysis);
+    showToast(latestPortfolioAnalysis.valid ? `Portfolio analysis completed for ${latestPortfolioAnalysis.symbols.length} assets.` : 'Portfolio analysis needs at least two valid historical assets.');
+  }
   if (action === 'run-walk-forward') {
     const sourceSeries = latestBacktestSeries ?? currentSeries;
     const trainWindow = Number(document.querySelector('#walk-forward-train').value);
