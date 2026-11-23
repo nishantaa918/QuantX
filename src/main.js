@@ -56,6 +56,9 @@ let selectedHistoricalAdjustment = 'raw';
 let historicalMarketChart;
 let historicalLoadState = 'idle';
 let historicalLoadError = '';
+let marketQuote = null;
+let marketQuoteState = 'idle';
+let marketQuoteError = '';
 let experiments = loadExperiments();
 let latestBacktestSeries = experiments.find((experiment) => experiment.kind === 'backtest' && experiment.backtest.valid)?.series ?? null;
 let policyState = evaluatePolicyState({ series: currentSeries, parameters: strategyConfig, thresholds: guardrailThresholds, backtestSeries: latestBacktestSeries, executionCosts });
@@ -425,6 +428,7 @@ function renderWorkspacePage(page) {
     settings: renderSettingsPage,
   };
   secondaryView.innerHTML = pageRenderers[page]();
+  if (page === 'markets') loadMarketQuote();
   if (page === 'backtesting') syncBacktestSourceControls();
   hydrateIcons(secondaryView);
   if (page === 'markets') {
@@ -563,6 +567,7 @@ function renderCoverageMonitor(groupNames = null, title = 'Coverage monitor') {
 
 function renderMarketsPage() {
   return `${renderPageIntro('MARKET RESEARCH', 'Historical data & replay', 'Real historical observations and synthetic replay are presented separately.')}
+    ${renderLiveQuotePanel()}
     ${renderHistoricalMarketPanel()}
     <section class="panel replay-panel" aria-labelledby="replay-title">
       <div class="panel-heading"><div><p class="section-kicker">${currentSeries.period === 'HISTORICAL' ? `${escapeHTML(currentSeries.symbol ?? 'HISTORICAL')} / HISTORICAL DATA` : `${escapeHTML(currentPeriod)} / SYNTHETIC MARKET DATA`}</p><h2 id="replay-title">Session replay</h2></div><span class="sim-tag">${currentSeries.period === 'HISTORICAL' ? 'HISTORICAL' : 'SIMULATED'}</span></div>
@@ -580,6 +585,25 @@ function historicalSymbolOptions(selected = selectedHistoricalSymbol) {
   return SUPPORTED_HISTORICAL_SYMBOLS.map((symbol) => `<option value="${symbol}" ${symbol === selected ? 'selected' : ''}>${symbol}</option>`).join('');
 }
 
+function renderLiveQuotePanel() {
+  const quote = marketQuote;
+  const changeClass = quote?.change >= 0 ? 'is-positive' : 'is-negative';
+  return `<section class="panel page-panel live-quote-panel" aria-labelledby="live-quote-title">
+    <div class="panel-heading"><div><p class="section-kicker">PROVIDER SNAPSHOT / ALPHA VANTAGE</p><h2 id="live-quote-title">Latest market quote</h2></div><div class="historical-status-line"><span class="historical-badge" id="market-quote-status">${marketQuoteState === 'loading' ? 'LOADING' : quote ? 'SNAPSHOT' : marketQuoteState === 'error' ? 'ERROR' : 'NOT LOADED'}</span><button class="secondary-button" type="button" data-action="refresh-market-quote" ${marketQuoteState === 'loading' ? 'disabled' : ''}>Refresh quote</button></div></div>
+    <p class="panel-subtitle">Latest quote snapshot for the selected symbol. Availability and delay depend on the provider plan; this is not a tick-by-tick streaming feed.</p>
+    <div class="live-quote-grid" id="market-quote-content" ${quote ? '' : 'hidden'}>
+      <div><span>SYMBOL</span><strong id="market-quote-symbol">${quote ? escapeHTML(quote.symbol) : '—'}</strong></div>
+      <div><span>LAST PRICE</span><strong id="market-quote-price">${quote ? quote.price.toFixed(2) : '—'}</strong></div>
+      <div><span>CHANGE</span><strong id="market-quote-change" class="${changeClass}">${quote ? `${quote.change >= 0 ? '+' : ''}${quote.change.toFixed(2)} (${quote.changePercent >= 0 ? '+' : ''}${quote.changePercent.toFixed(2)}%)` : '—'}</strong></div>
+      <div><span>PREVIOUS CLOSE</span><strong id="market-quote-previous">${quote ? quote.previousClose.toFixed(2) : '—'}</strong></div>
+      <div><span>VOLUME</span><strong id="market-quote-volume">${quote ? quote.volume.toLocaleString('en-US') : '—'}</strong></div>
+      <div><span>LATEST TRADING DAY</span><strong id="market-quote-day">${quote ? escapeHTML(quote.latestTradingDay) : '—'}</strong></div>
+    </div>
+    <p class="form-error" id="market-quote-error" aria-live="polite">${escapeHTML(marketQuoteError)}</p>
+    <p class="table-note" id="market-quote-updated">${quote ? `Retrieved ${escapeHTML(new Date(quote.retrievedAt).toLocaleString())} · Provider: Alpha Vantage` : 'No quote snapshot loaded yet.'}</p>
+  </section>`;
+}
+
 function renderHistoricalMarketPanel() {
   return `<section class="panel page-panel historical-market-panel" aria-labelledby="historical-market-title">
     <div class="panel-heading"><div><p class="section-kicker">ALPHA VANTAGE / DAILY / ${selectedHistoricalAdjustment.toUpperCase()}</p><h2 id="historical-market-title">Historical prices</h2></div><div class="historical-status-line"><label class="field-label historical-symbol-label" for="historical-symbol-select">SYMBOL<select id="historical-symbol-select" data-historical-symbol>${historicalSymbolOptions()}</select></label><label class="field-label historical-symbol-label" for="historical-adjustment-select">PRICE BASIS<select id="historical-adjustment-select" data-historical-adjustment><option value="raw" ${selectedHistoricalAdjustment === 'raw' ? 'selected' : ''}>Raw close</option><option value="adjusted" ${selectedHistoricalAdjustment === 'adjusted' ? 'selected' : ''}>Adjusted close</option></select></label><span class="historical-badge" id="historical-market-status">NOT LOADED</span><button class="secondary-button" id="historical-market-load" type="button" data-action="load-historical-data">Load selected history</button></div></div>
@@ -592,6 +616,32 @@ function renderHistoricalMarketPanel() {
     </div>
     <p class="historical-load-message" id="historical-market-message">No historical response loaded. Configure the server key to request the selected symbol's daily data.</p>
   </section>`;
+}
+
+async function loadMarketQuote(forceRefresh = false) {
+  if (marketQuoteState === 'loading' || currentPage !== 'markets') return;
+  marketQuoteState = 'loading';
+  marketQuoteError = '';
+  const button = document.querySelector('[data-action="refresh-market-quote"]');
+  const status = document.querySelector('#market-quote-status');
+  if (button) button.disabled = true;
+  if (status) status.textContent = 'LOADING';
+  try {
+    const response = await fetch(`/api/market-data/quote?symbol=${encodeURIComponent(selectedHistoricalSymbol)}${forceRefresh ? '&refresh=1' : ''}`, { headers: { Accept: 'application/json' } });
+    const payload = await response.json();
+    if (!response.ok || payload.status !== 'quote' || payload.data?.symbol !== selectedHistoricalSymbol) {
+      throw new Error(payload.message || `Quote request failed (${response.status}).`);
+    }
+    marketQuote = { ...payload.data, retrievedAt: payload.lastUpdated };
+    marketQuoteState = 'loaded';
+    const panel = document.querySelector('.live-quote-panel');
+    if (panel) panel.outerHTML = renderLiveQuotePanel();
+  } catch (error) {
+    marketQuoteState = 'error';
+    marketQuoteError = error.message || 'Could not load the latest quote.';
+    const panel = document.querySelector('.live-quote-panel');
+    if (panel) panel.outerHTML = renderLiveQuotePanel();
+  }
 }
 
 function renderHistoricalMarketState() {
@@ -1246,6 +1296,7 @@ secondaryView.addEventListener('click', (event) => {
   if (!actionButton) return;
   const action = actionButton.dataset.action;
   if (action === 'load-historical-data') loadHistoricalMarketData();
+  if (action === 'refresh-market-quote') loadMarketQuote(true);
   if (action === 'run-backtest') runBacktest();
   if (action === 'run-walk-forward') {
     const sourceSeries = latestBacktestSeries ?? currentSeries;
@@ -1339,6 +1390,14 @@ secondaryView.addEventListener('change', (event) => {
   }
   if (event.target.dataset.historicalSymbol !== undefined) {
     selectedHistoricalSymbol = event.target.value;
+    marketQuote = null;
+    marketQuoteState = 'idle';
+    marketQuoteError = '';
+    if (currentPage === 'markets') {
+      const panel = document.querySelector('.live-quote-panel');
+      if (panel) panel.outerHTML = renderLiveQuotePanel();
+      loadMarketQuote();
+    }
     historicalMarketData = null;
     historicalLoadState = 'idle';
     historicalLoadError = '';
