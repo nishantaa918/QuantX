@@ -24,10 +24,10 @@ test('Newey-West supports fixed bandwidth and explicit HC0-only lag zero', () =>
   const x = Array.from({ length: 30 }, (_, index) => [1, index]);
   const y = x.map((row, index) => 2 + 3 * row[1] + Math.cos(index));
   const hac = fitHacRegression(y, x, { bandwidth: 2 });
-  const hc0 = fitHacRegression(y, x, { bandwidth: 0, finiteSampleCorrection: false });
+  const hc0 = fitHacRegression(y, x, { bandwidth: 0, hc0Only: true, finiteSampleCorrection: false });
   assert.equal(hac.bandwidth, 2);
   assert.equal(hac.bandwidthMethod, 'fixed');
-  assert.equal(hc0.bandwidth, 1); // Current API enforces HAC lag >= 1.
+  assert.equal(hc0.bandwidth, 0);
   assert.equal(hc0.finiteSampleCorrection, 1);
 });
 
