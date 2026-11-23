@@ -62,6 +62,49 @@ test('strategy autopsy reconciles returns and applies next-session exposure alig
   assert.ok(Number.isFinite(report.relativeReturn));
 });
 
+
+test('benchmark diagnostics estimate beta, alpha, tracking error and information ratio from aligned daily returns', () => {
+  const benchmarkDailyReturns = Array.from({ length: 50 }, (_, index) => 0.002 * Math.sin(index * 0.71) + 0.0004 * Math.cos(index * 0.19));
+  const prices = [100];
+  for (const dailyReturn of benchmarkDailyReturns) prices.push(prices.at(-1) * (1 + dailyReturn));
+  const strategyDailyReturns = [0, ...benchmarkDailyReturns.map((value) => 0.001 + 1.5 * value)];
+  const equityCurve = [100_000];
+  for (const dailyReturn of strategyDailyReturns.slice(1)) equityCurve.push(equityCurve.at(-1) * (1 + dailyReturn));
+  const series = datedSeries(prices);
+  const backtest = {
+    valid: true,
+    equityCurve,
+    dailyReturns: strategyDailyReturns,
+    exposures: prices.map((_, index) => index === 0 ? 0 : 1),
+  };
+  const report = analyzeStrategyBacktest(series, backtest);
+  assert.equal(report.valid, true);
+  assert.equal(report.benchmarkDiagnostics.valid, true);
+  assert.ok(Math.abs(report.benchmarkDiagnostics.beta - 1.5) < 1e-9);
+  assert.ok(Math.abs(report.benchmarkDiagnostics.annualizedAlphaPct - 25.2) < 1e-8);
+  assert.ok(report.benchmarkDiagnostics.trackingErrorPct < 1e-8);
+  assert.equal(report.benchmarkDiagnostics.informationRatio, null);
+  assert.equal(report.benchmarkDiagnostics.riskFreeRateAnnualPct, 0);
+  assert.equal(report.benchmarkDiagnostics.observations, 50);
+});
+
+test('benchmark diagnostics handle a flat benchmark and reject non-finite backtest returns', () => {
+  const flat = datedSeries(Array.from({ length: 20 }, () => 100));
+  const backtest = {
+    valid: true,
+    equityCurve: Array.from({ length: 20 }, (_, index) => 100_000 * (1.001 ** index)),
+    dailyReturns: Array.from({ length: 20 }, (_, index) => index === 0 ? 0 : 0.001),
+    exposures: Array.from({ length: 20 }, () => 1),
+  };
+  const report = analyzeStrategyBacktest(flat, backtest);
+  assert.equal(report.valid, true);
+  assert.equal(report.benchmarkDiagnostics.beta, null);
+  assert.equal(report.benchmarkDiagnostics.correlation, null);
+  assert.equal(report.benchmarkDiagnostics.annualizedAlphaPct, null);
+  assert.equal(report.benchmarkDiagnostics.informationRatio, null);
+  assert.equal(analyzeStrategyBacktest(flat, { ...backtest, dailyReturns: [0, NaN, ...backtest.dailyReturns.slice(2)] }).valid, false);
+});
+
 test('strategy autopsy refuses misaligned or invalid backtests', () => {
   const series = trendingSeries(30);
   assert.equal(analyzeStrategyBacktest(series, null).valid, false);
