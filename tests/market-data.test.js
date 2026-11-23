@@ -145,3 +145,76 @@ test('historical dated close series runs through the existing strategy backtest 
   assert.ok(backtest.exposures.some((exposure) => exposure > 0));
   assert.ok(Number.isFinite(backtest.metrics.totalReturn));
 });
+
+
+test('adjusted daily normalization preserves adjusted close, dividends, and split coefficients', () => {
+  const payload = {
+    'Meta Data': { '2. Symbol': 'AAPL', '3. Last Refreshed': '2025-01-03', '5. Time Zone': 'US/Eastern' },
+    'Time Series (Daily Adjusted)': {
+      '2025-01-03': {
+        '1. open': '103', '2. high': '105', '3. low': '102', '4. close': '104',
+        '5. adjusted close': '102.5', '6. volume': '300',
+        '7. dividend amount': '0.25', '8. split coefficient': '1.0',
+      },
+      '2025-01-02': {
+        '1. open': '101', '2. high': '104', '3. low': '100', '4. close': '103',
+        '5. adjusted close': '101.4', '6. volume': '200',
+        '7. dividend amount': '0', '8. split coefficient': '1.0',
+      },
+    },
+  };
+  const normalized = normalizeAlphaVantageDaily(payload);
+  assert.equal(normalized.adjustment, 'raw_with_adjusted_close');
+  assert.equal(normalized.observations[1].adjustedClose, 102.5);
+  assert.equal(normalized.observations[1].dividendAmount, 0.25);
+  assert.equal(normalized.observations[1].splitCoefficient, 1);
+  const adjusted = toPriceSeries(normalized.observations, { symbol: 'AAPL', priceBasis: 'adjusted' });
+  assert.equal(adjusted.adjustment, 'adjusted');
+  assert.deepEqual(adjusted.values, [101.4, 102.5]);
+  const raw = toPriceSeries(normalized.observations, { symbol: 'AAPL', priceBasis: 'raw' });
+  assert.deepEqual(raw.values, [103, 104]);
+});
+
+test('adjusted price series rejects missing or invalid adjustment data', () => {
+  const observations = normalizeAlphaVantageRows(rows);
+  assert.throws(() => toPriceSeries(observations, { priceBasis: 'adjusted' }), /adjusted close/);
+  assert.throws(() => toPriceSeries(observations, { priceBasis: 'total-return' }), /Price basis/);
+  assert.throws(() => normalizeAlphaVantageRows([{ ...rows[0], dividendAmount: '-0.1' }]), /dividend amount/);
+  assert.throws(() => normalizeAlphaVantageRows([{ ...rows[0], splitCoefficient: '0' }]), /split coefficient/);
+});
+
+test('middleware requests adjusted provider data and caches raw and adjusted requests separately', async () => {
+  const requests = [];
+  const adjustedPayload = {
+    'Meta Data': { '2. Symbol': 'AAPL' },
+    'Time Series (Daily Adjusted)': {
+      '2025-01-02': {
+        '1. open': '101', '2. high': '104', '3. low': '100', '4. close': '103',
+        '5. adjusted close': '101.4', '6. volume': '200',
+        '7. dividend amount': '0', '8. split coefficient': '1.0',
+      },
+      '2025-01-01': {
+        '1. open': '100', '2. high': '102', '3. low': '99', '4. close': '101',
+        '5. adjusted close': '99.5', '6. volume': '100',
+        '7. dividend amount': '0.2', '8. split coefficient': '1.0',
+      },
+    },
+  };
+  const middleware = createAlphaVantageMiddleware({
+    apiKey: 'secret',
+    fetchImpl: async (url) => {
+      const parsed = new URL(url);
+      requests.push(parsed.searchParams.get('function'));
+      return { ok: true, json: async () => parsed.searchParams.get('function') === 'TIME_SERIES_DAILY_ADJUSTED' ? adjustedPayload : dailyPayload() };
+    },
+  });
+  const adjusted = await callMiddleware(middleware, { url: '/api/market-data/daily?symbol=AAPL&adjustment=adjusted' });
+  const raw = await callMiddleware(middleware, { url: '/api/market-data/daily?symbol=AAPL&adjustment=raw' });
+  await callMiddleware(middleware, { url: '/api/market-data/daily?symbol=AAPL&adjustment=adjusted' });
+  assert.equal(adjusted.status, 200);
+  assert.equal(adjusted.body.data.requestedAdjustment, 'adjusted');
+  assert.equal(adjusted.body.data.observations[0].adjustedClose, 99.5);
+  assert.equal(raw.status, 200);
+  assert.equal(raw.body.data.requestedAdjustment, 'raw');
+  assert.deepEqual(requests, ['TIME_SERIES_DAILY_ADJUSTED', 'TIME_SERIES_DAILY']);
+});
