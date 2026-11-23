@@ -498,7 +498,7 @@ table { width: 100%; border-collapse: collapse; text-align: left; }
 }
 .intelligence-panel { margin-top: 16px; }
 .intelligence-panel > .panel-heading { align-items: center; margin-bottom: 17px; }
-.intelligence-controls { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)) auto; align-items: end; gap: 13px; padding: 14px 0 18px; border-top: 1px solid var(--border); }
+.intelligence-controls { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)) auto; align-items: end; gap: 13px; padding: 14px 0 18px; border-top: 1px solid var(--border); }
 .intelligence-controls .field-label { min-width: 0; }
 .intelligence-controls select { width: 100%; min-height: 39px; padding: 0 9px; border: 1px solid var(--border-strong); background: #0b1219; color: var(--text); font-size: 10px; }
 .intelligence-section { padding: 17px 0; border-top: 1px solid var(--border); }
