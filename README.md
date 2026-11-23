@@ -26,3 +26,7 @@ If the key is absent, the endpoint returns a clear `503 unavailable` response. S
 - `npm run build` creates the production frontend bundle.
 
 QuantX is an educational research and simulation project. Raw observations remain unadjusted; adjusted observations carry provider-adjusted closes and explicit dividend/split metadata. Adjusted close is a historical price adjustment, not a guarantee of a fully reconstructed dividend-reinvestment total-return series. Strategy positions and portfolio returns are simulated. It does not execute trades or provide investment advice.
+
+## Research intelligence
+
+For dated historical experiments, the Research Lab can compare strategy returns against SPY, QQQ, DIA, or IWM using exact shared trading dates. Synthetic experiments use the selected asset's own buy-and-hold series because they have no real trading dates. Beta, alpha, correlation, tracking error, and information ratio are in-sample diagnostics; alpha assumes a 0% risk-free rate. Short samples, raw/unadjusted prices, and the provider's compact history window can limit reliability.
