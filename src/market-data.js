@@ -9,15 +9,10 @@ function parsePositiveNumber(value, field, date) {
   return number;
 }
 
-function parseNonNegativeNumber(value, field, date, fallback = 0) {
-  if (value === undefined || value === null || value === '') return fallback;
-  const number = typeof value === 'number' ? value : Number(String(value).trim());
-  if (!Number.isFinite(number) || number < 0) throw new Error(`Invalid ${field} value for ${date}.`);
-  return number;
-}
-
 function parseVolume(value, date) {
-  return parseNonNegativeNumber(value, 'volume', date);
+  const volume = typeof value === 'number' ? value : Number(String(value ?? '').trim());
+  if (!Number.isFinite(volume) || volume < 0) throw new Error(`Invalid volume value for ${date}.`);
+  return volume;
 }
 
 function validateDate(value) {
@@ -37,21 +32,10 @@ export function normalizeAlphaVantageRows(rows, { symbol = 'AAPL', limit = 100 }
     const low = parsePositiveNumber(row.low, 'low', row.date);
     const close = parsePositiveNumber(row.close, 'close', row.date);
     const volume = parseVolume(row.volume, row.date);
-    const adjustedClose = row.adjustedClose === undefined || row.adjustedClose === null || row.adjustedClose === ''
-      ? null
-      : parsePositiveNumber(row.adjustedClose, 'adjusted close', row.date);
-    const dividendAmount = parseNonNegativeNumber(row.dividendAmount, 'dividend amount', row.date);
-    const splitCoefficient = row.splitCoefficient === undefined || row.splitCoefficient === null || row.splitCoefficient === ''
-      ? null
-      : parsePositiveNumber(row.splitCoefficient, 'split coefficient', row.date);
     if (high < low || high < Math.max(open, close) || low > Math.min(open, close)) {
       throw new Error(`Inconsistent OHLC prices for ${row.date}.`);
     }
-    byDate.set(row.date, {
-      symbol, date: row.date, open, high, low, close, volume,
-      adjustedClose, dividendAmount, splitCoefficient,
-      source: SOURCE, frequency: FREQUENCY, adjustment: 'raw',
-    });
+    byDate.set(row.date, { symbol, date: row.date, open, high, low, close, volume, source: SOURCE, frequency: FREQUENCY, adjustment: 'raw' });
   }
   const observations = [...byDate.values()].sort((first, second) => first.date.localeCompare(second.date)).slice(-limit);
   if (!observations.length) throw new Error('The provider returned no daily observations.');
@@ -65,7 +49,7 @@ export function normalizeAlphaVantageDaily(payload, { symbol = 'AAPL', limit = 1
   const metadata = payload['Meta Data'] ?? {};
   const providerSymbol = metadata['2. Symbol'];
   if (providerSymbol && providerSymbol.toUpperCase() !== symbol.toUpperCase()) throw new Error(`Provider returned ${providerSymbol} instead of ${symbol}.`);
-  const dailySeries = payload['Time Series (Daily)'] ?? payload['Time Series (Daily Adjusted)'];
+  const dailySeries = payload['Time Series (Daily)'];
   if (!dailySeries || typeof dailySeries !== 'object' || Array.isArray(dailySeries)) throw new Error('The provider response contains no daily time series.');
   const rows = Object.entries(dailySeries).map(([date, daily]) => ({
     date,
@@ -73,19 +57,14 @@ export function normalizeAlphaVantageDaily(payload, { symbol = 'AAPL', limit = 1
     high: daily?.['2. high'],
     low: daily?.['3. low'],
     close: daily?.['4. close'],
-    adjustedClose: daily?.['5. adjusted close'],
-    volume: daily?.['6. volume'] ?? daily?.['5. volume'],
-    dividendAmount: daily?.['7. dividend amount'],
-    splitCoefficient: daily?.['8. split coefficient'],
+    volume: daily?.['5. volume'],
   }));
-  const observations = normalizeAlphaVantageRows(rows, { symbol: symbol.toUpperCase(), limit });
-  const hasAdjustedClose = observations.every((observation) => Number.isFinite(observation.adjustedClose));
   return {
     symbol: symbol.toUpperCase(),
-    observations,
+    observations: normalizeAlphaVantageRows(rows, { symbol: symbol.toUpperCase(), limit }),
     source: SOURCE,
     frequency: FREQUENCY,
-    adjustment: hasAdjustedClose ? 'raw_with_adjusted_close' : 'raw',
+    adjustment: 'raw',
     exchange: null,
     currency: null,
     providerLastRefreshed: metadata['3. Last Refreshed'] ?? null,
@@ -93,11 +72,11 @@ export function normalizeAlphaVantageDaily(payload, { symbol = 'AAPL', limit = 1
   };
 }
 
-export function toPriceSeries(observations, { symbol = 'AAPL', priceBasis = 'raw' } = {}) {
+
+export function toPriceSeries(observations, { symbol = 'AAPL' } = {}) {
   if (!Array.isArray(observations) || observations.length < 2) {
     throw new Error('Historical backtesting requires at least two daily observations.');
   }
-  if (!['raw', 'adjusted'].includes(priceBasis)) throw new Error('Price basis must be raw or adjusted.');
   const normalizedSymbol = String(symbol).trim().toUpperCase();
   if (!normalizedSymbol) throw new Error('A valid ticker symbol is required.');
   let previousDate = '';
@@ -106,20 +85,17 @@ export function toPriceSeries(observations, { symbol = 'AAPL', priceBasis = 'raw
       throw new Error('Historical observations must have unique, ascending calendar dates.');
     }
     previousDate = observation.date;
-    const close = parsePositiveNumber(
-      priceBasis === 'adjusted' ? observation.adjustedClose : observation.close,
-      priceBasis === 'adjusted' ? 'adjusted close' : 'close',
-      observation.date,
-    );
-    return { ...observation, symbol: normalizedSymbol, rawClose: observation.close, close, adjustment: priceBasis };
+    return {
+      ...observation,
+      symbol: normalizedSymbol,
+      close: parsePositiveNumber(observation.close, 'close', observation.date),
+    };
   });
   return {
     period: 'HISTORICAL',
     symbol: normalizedSymbol,
     source: SOURCE,
     frequency: FREQUENCY,
-    adjustment: priceBasis,
-    priceBasis,
     labels: cleanObservations.map((observation) => observation.date),
     values: cleanObservations.map((observation) => observation.close),
     observations: cleanObservations,
