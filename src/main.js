@@ -22,6 +22,7 @@ import { createReplayController } from './replay-controller.js';
 import { createSimulationController, createSyntheticSimulation } from './simulation-engine.js';
 import { analyzeStrategyBacktest, detectMarketRegimes, testMomentumHypothesis } from './research-engine.js';
 import { runWalkForwardValidation } from './walk-forward.js';
+import { analyzeEqualWeightPortfolio } from './portfolio-analysis.js';
 
 const STORAGE_KEY = 'quantx.midnight.experiments';
 const STRATEGY_STORAGE_KEY = 'quantx.midnight.strategy';
@@ -528,9 +529,37 @@ function renderCoverageMonitor(groupNames = null, title = 'Coverage monitor') {
   return `<section class="panel page-panel coverage-panel" data-coverage-groups="${coverageGroups}" data-coverage-title="${escapeHTML(title)}"><div class="panel-heading"><div><p class="section-kicker">OBSERVED LOCAL RUNS</p><h2>${escapeHTML(title)}</h2></div><span class="coverage-count">${testedCount} / ${visibleItems.length} categories tested</span></div><div class="coverage-groups">${groupMarkup}</div><div class="coverage-gap-note"><strong>${gaps.length ? `${gaps.length} coverage gaps` : 'No gaps in these categories'}</strong><span>${gaps.length ? `Untested: ${gaps.map((item) => escapeHTML(item.name)).join(', ')}.` : 'Every displayed category has at least one saved run.'}</span></div>${testedCount === 0 ? '<p class="table-note">Coverage remains untested until a local backtest or Monte Carlo run is saved. No coverage percentages are estimated.</p>' : '<p class="table-note">Coverage counts use saved local experiments and completed synthetic runs only. No percentages are extrapolated.</p>'}</section>`;
 }
 
+function renderPortfolioLabPanel() {
+  return `<section class="panel page-panel portfolio-lab-panel">
+    <div class="panel-heading"><div><p class="section-kicker">CROSS-ASSET RESEARCH</p><h2>Portfolio diversification lab</h2><p class="panel-subtitle">Compare a small equal-weight portfolio using aligned historical daily data.</p></div><span class="sim-tag">BUY & HOLD</span></div>
+    <div class="portfolio-lab-controls">
+      <label class="field-label" for="portfolio-symbols">Symbols (comma-separated)<input id="portfolio-symbols" type="text" value="AAPL, MSFT, SPY" placeholder="AAPL, MSFT, SPY" /></label>
+      <label class="field-label" for="portfolio-adjustment">Price basis<select id="portfolio-adjustment"><option value="raw">Raw close</option><option value="adjusted">Adjusted close</option></select></label>
+      <div class="field-action"><button class="primary-button" type="button" data-action="run-portfolio-analysis">Analyze portfolio</button></div>
+    </div>
+    <p class="table-note">Choose 2–5 supported symbols: ${SUPPORTED_HISTORICAL_SYMBOLS.join(', ')}. The model sets equal initial weights and lets them drift; it does not rebalance daily. Provider rate limits and adjusted-data plan access apply.</p>
+    <p class="form-error" id="portfolio-lab-error" aria-live="polite"></p>
+    <div id="portfolio-lab-results"><p class="empty-state">No portfolio analysis has been run yet.</p></div>
+  </section>`;
+}
+
+function renderPortfolioAnalysisResults(result) {
+  if (!result?.valid) return `<p class="empty-state">${escapeHTML(result?.error ?? 'No portfolio results available.')}</p>`;
+  const summary = `<div class="result-summary"><div><span>PORTFOLIO RETURN</span><strong class="${result.metrics.totalReturn >= 0 ? 'is-positive' : 'is-negative'}">${result.metrics.totalReturn >= 0 ? '+' : ''}${result.metrics.totalReturn.toFixed(2)}%</strong></div><div><span>ANNUALIZED VOLATILITY</span><strong>${result.metrics.annualizedVolatility.toFixed(2)}%</strong></div><div><span>SHARPE RATIO</span><strong>${result.metrics.sharpeRatio.toFixed(2)}</strong></div><div><span>MAX DRAWDOWN</span><strong>${result.metrics.maxDrawdown.toFixed(2)}%</strong></div></div>`;
+  const assetRows = result.assetMetrics.map((asset) => `<tr><td>${escapeHTML(asset.symbol)}</td><td>${asset.weight.toFixed(1)}%</td><td>${asset.metrics.totalReturn >= 0 ? '+' : ''}${asset.metrics.totalReturn.toFixed(2)}%</td><td>${asset.metrics.annualizedVolatility.toFixed(2)}%</td><td>${asset.metrics.maxDrawdown.toFixed(2)}%</td></tr>`).join('');
+  const correlationRows = result.correlationMatrix.map((row) => `<tr><th>${escapeHTML(row.symbol)}</th>${row.correlations.map((cell) => `<td>${Number.isFinite(cell.value) ? cell.value.toFixed(2) : 'N/A'}</td>`).join('')}</tr>`).join('');
+  const correlationHeaders = result.symbols.map((symbol) => `<th>${escapeHTML(symbol)}</th>`).join('');
+  return `${summary}<p class="result-caption">${result.observations} common daily observations / ${escapeHTML(result.startDate)} to ${escapeHTML(result.endDate)} / equal initial weights of ${(100 / result.symbols.length).toFixed(1)}% each.</p>
+    <h3 class="portfolio-subheading">Constituent performance</h3><div class="table-scroll"><table class="workspace-table portfolio-table"><thead><tr><th>ASSET</th><th>INITIAL WEIGHT</th><th>RETURN</th><th>ANNUALIZED VOLATILITY</th><th>MAX DRAWDOWN</th></tr></thead><tbody>${assetRows}</tbody></table></div>
+    <h3 class="portfolio-subheading">Daily-return correlation</h3><div class="table-scroll"><table class="workspace-table portfolio-correlation"><thead><tr><th>ASSET</th>${correlationHeaders}</tr></thead><tbody>${correlationRows}</tbody></table></div>
+    <p class="result-caption">Average pairwise correlation: ${Number.isFinite(result.averagePairwiseCorrelation) ? result.averagePairwiseCorrelation.toFixed(3) : 'N/A'}. Portfolio values are calculated from equal initial allocations with weights drifting naturally as prices change.</p>
+    <p class="research-caveat">${result.caveats.map(escapeHTML).join(' ')}</p>`;
+}
+
 function renderMarketsPage() {
   return `${renderPageIntro('MARKET RESEARCH', 'Historical data & replay', 'Real historical observations and synthetic replay are presented separately.')}
     ${renderHistoricalMarketPanel()}
+    ${renderPortfolioLabPanel()}
     <section class="panel replay-panel" aria-labelledby="replay-title">
       <div class="panel-heading"><div><p class="section-kicker">${currentSeries.period === 'HISTORICAL' ? `${escapeHTML(currentSeries.symbol ?? 'HISTORICAL')} / HISTORICAL DATA` : `${escapeHTML(currentPeriod)} / SYNTHETIC MARKET DATA`}</p><h2 id="replay-title">Session replay</h2></div><span class="sim-tag">${currentSeries.period === 'HISTORICAL' ? 'HISTORICAL' : 'SIMULATED'}</span></div>
       <div class="replay-metrics"><div><span>SESSION</span><strong id="replay-session">--</strong></div><div><span>ASSET PRICE</span><strong id="replay-price">--</strong></div><div><span>MA (${strategyConfig.shortWindow}) / MA (${strategyConfig.longWindow})</span><strong id="replay-averages">--</strong></div><div><span>STRATEGY SIGNAL</span><strong id="replay-signal">--</strong></div><div><span>PORTFOLIO VALUE</span><strong id="replay-portfolio">--</strong></div></div>
@@ -1172,6 +1201,28 @@ secondaryView.addEventListener('click', (event) => {
   const action = actionButton.dataset.action;
   if (action === 'load-historical-data') loadHistoricalMarketData();
   if (action === 'run-backtest') runBacktest();
+  if (action === 'run-portfolio-analysis') {
+    const error = document.querySelector('#portfolio-lab-error');
+    const symbols = [...new Set(document.querySelector('#portfolio-symbols').value.split(',').map((symbol) => symbol.trim().toUpperCase()).filter(Boolean))];
+    const priceBasis = document.querySelector('#portfolio-adjustment').value;
+    if (symbols.length < 2 || symbols.length > 5 || symbols.some((symbol) => !SUPPORTED_HISTORICAL_SYMBOLS.includes(symbol))) {
+      error.textContent = 'Enter 2–5 unique supported symbols from the list above.';
+      return;
+    }
+    error.textContent = 'Loading historical observations for each selected asset…';
+    const results = await Promise.all(symbols.map(async (symbol) => {
+      const response = await fetch(`/api/market-data/daily?symbol=${encodeURIComponent(symbol)}&adjustment=${encodeURIComponent(priceBasis)}`, { headers: { Accept: 'application/json' } });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.message || `Could not load ${symbol} historical data.`);
+      if (payload.status !== 'historical' || payload.data?.symbol !== symbol || !Array.isArray(payload.data.observations)) throw new Error(`Invalid historical response for ${symbol}.`);
+      return toPriceSeries(payload.data.observations, { symbol, priceBasis });
+    }));
+    const analysis = analyzeEqualWeightPortfolio(results, { minimumObservations: 20 });
+    error.textContent = analysis.valid ? '' : analysis.error;
+    document.querySelector('#portfolio-lab-results').innerHTML = renderPortfolioAnalysisResults(analysis);
+    showToast(analysis.valid ? 'Portfolio diversification analysis completed.' : 'Portfolio analysis could not be completed.');
+  }
+
   if (action === 'run-walk-forward') {
     const sourceSeries = latestBacktestSeries ?? currentSeries;
     const trainWindow = Number(document.querySelector('#walk-forward-train').value);
