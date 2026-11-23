@@ -88,6 +88,48 @@ test('benchmark diagnostics estimate beta, alpha, tracking error and information
   assert.equal(report.benchmarkDiagnostics.observations, 50);
 });
 
+test('downside-risk diagnostics calculate Sortino, Calmar and drawdown duration', () => {
+  const prices = [100, 110, 100, 90, 95, 110, 115];
+  const series = datedSeries(prices);
+  const equityCurve = [100_000, 110_000, 100_000, 90_000, 95_000, 110_000, 115_000];
+  const dailyReturns = [0, 0.1, -10000 / 110000, -0.1, 5000 / 90000, 15000 / 95000, 5000 / 110000];
+  const backtest = {
+    valid: true,
+    equityCurve,
+    dailyReturns,
+    exposures: prices.map((_, index) => index === 0 ? 0 : 1),
+    metrics: { maxDrawdown: -100 / 11 },
+  };
+  const report = analyzeStrategyBacktest(series, backtest);
+  assert.equal(report.valid, true);
+  const returns = dailyReturns.slice(1);
+  const expectedDownside = Math.sqrt(returns.reduce((sum, value) => sum + Math.min(value, 0) ** 2, 0) / returns.length) * Math.sqrt(252) * 100;
+  assert.ok(Math.abs(report.downsideRisk.downsideDeviationPct - expectedDownside) < 1e-10);
+  assert.ok(Number.isFinite(report.downsideRisk.sortinoRatio));
+  assert.equal(report.downsideRisk.maxDrawdownDurationSessions, 3);
+  assert.ok(Number.isFinite(report.downsideRisk.annualizedReturnPct));
+  assert.ok(Number.isFinite(report.downsideRisk.calmarRatio));
+  assert.equal(report.downsideRisk.targetDailyReturnPct, 0);
+});
+
+test('downside-risk diagnostics return null ratios when denominators are zero', () => {
+  const prices = [100, 101, 102, 103, 104, 105];
+  const series = datedSeries(prices);
+  const equityCurve = prices.map((value) => value * 1000);
+  const dailyReturns = [0, ...prices.slice(1).map((value, index) => value / prices[index] - 1)];
+  const report = analyzeStrategyBacktest(series, {
+    valid: true,
+    equityCurve,
+    dailyReturns,
+    exposures: prices.map(() => 1),
+    metrics: { maxDrawdown: 0 },
+  });
+  assert.equal(report.valid, true);
+  assert.equal(report.downsideRisk.sortinoRatio, null);
+  assert.equal(report.downsideRisk.calmarRatio, null);
+  assert.equal(report.downsideRisk.maxDrawdownDurationSessions, 0);
+});
+
 test('benchmark diagnostics handle a flat benchmark and reject non-finite backtest returns', () => {
   const flat = datedSeries(Array.from({ length: 20 }, () => 100));
   const backtest = {
