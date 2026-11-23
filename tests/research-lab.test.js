@@ -38,7 +38,7 @@ class ElementStub {
   destroy() {}
 }
 
-async function bootApplication(storage) {
+async function bootApplication(storage, fetchImpl = async () => { throw new Error('Unexpected network request in test.'); }) {
   const pageNames = ['overview', 'markets', 'strategies', 'backtesting', 'monte-carlo', 'research-lab', 'settings'];
   const nav = pageNames.map((page) => new ElementStub({ page }));
   const elements = new Map();
@@ -68,6 +68,7 @@ async function bootApplication(storage) {
     localStorage,
     window,
     console,
+    fetch: fetchImpl,
     calculatePerformance,
     generateSeries,
     runMonteCarlo,
@@ -178,6 +179,46 @@ test('backtest and Monte Carlo experiments reload reproducibly and can be delete
   assert.equal(vm.runInContext('currentGuardrails.status', reloaded.context), 'PENDING');
 });
 
+
+
+test('Research Lab loads an independent index and displays matched-date diagnostics', async () => {
+  const storage = new Map();
+  const observations = Array.from({ length: 60 }, (_, index) => {
+    const date = new Date(Date.UTC(2025, 0, 1 + index)).toISOString().slice(0, 10);
+    const close = 100 * Math.exp(index * 0.001 + Math.sin(index * 0.53) * 0.012);
+    return { symbol: 'AAPL', date, open: close, high: close * 1.01, low: close * 0.99, close, volume: 1_000_000, source: 'alpha_vantage', frequency: '1d', adjustment: 'raw' };
+  });
+  const benchmarkObservations = observations.map((item, index) => {
+    const close = 100 * Math.exp(index * 0.0006 + Math.cos(index * 0.37) * 0.01);
+    return { ...item, symbol: 'SPY', open: close, high: close * 1.01, low: close * 0.99, close };
+  });
+  storage.set('quantx.midnight.experiments', JSON.stringify([{
+    id: 'historical-aapl',
+    name: 'AAPL historical research',
+    kind: 'backtest',
+    seed: 1,
+    period: '1M',
+    timestamp: Date.now(),
+    strategyConfig: { type: 'moving-average', shortWindow: 3, longWindow: 12, lookback: 15, volatilitySensitivity: 1.5 },
+    dataSource: 'historical',
+    symbol: 'AAPL',
+    series: { symbol: 'AAPL', observations },
+    executionCosts: { commissionBps: 1, slippageBps: 5 },
+  }]));
+  const app = await bootApplication(storage, async (url) => {
+    assert.match(String(url), /symbol=SPY/);
+    return { ok: true, json: async () => ({ status: 'historical', data: { symbol: 'SPY', observations: benchmarkObservations } }) };
+  });
+  app.nav[5].listeners.click();
+  assert.equal(app.getElement('#research-benchmark-symbol').disabled, false);
+  app.getElement('#research-benchmark-symbol').value = 'SPY';
+  clickAction(app, 'load-research-benchmark');
+  await new Promise((resolve) => setImmediate(resolve));
+  const markup = app.getElement('#secondary-view').innerHTML;
+  assert.match(markup, /BENCHMARK-RELATIVE RISK \/ SPY/);
+  assert.match(markup, /date-matched SPY observations/);
+  assert.match(markup, /Matched active return/);
+});
 
 test('adjusted historical backtests use adjusted closes and preserve their basis after reload', async () => {
   const storage = new Map();
