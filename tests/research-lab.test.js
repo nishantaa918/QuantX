@@ -126,7 +126,7 @@ test('backtest and Monte Carlo experiments reload reproducibly and can be delete
   app.nav[5].listeners.click();
   const researchMarkup = app.getElement('#secondary-view').innerHTML;
   assert.match(researchMarkup, /Market benchmark/);
-  assert.match(researchMarkup, /SPY \/ S&amp;P 500 ETF/);
+  assert.match(researchMarkup, /SPY \/ S&P 500 ETF/);
   assert.match(researchMarkup, /Load index comparison/);
   assert.match(researchMarkup, /disabled/);
 
