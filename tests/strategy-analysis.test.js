@@ -3,11 +3,13 @@ import test from 'node:test';
 import { calculatePerformance } from '../src/data.js';
 import {
   calculateStrategyBacktest,
-  DEFAULT_EXECUTION_COSTS,\n  DEFAULT_GUARDRAILS,
+  DEFAULT_EXECUTION_COSTS,
+  DEFAULT_GUARDRAILS,
   DEFAULT_STRATEGY,
   evaluatePolicyState,
   evaluateRiskGuardrails,
-  runParameterSweep,\n  validateExecutionCosts,
+  runParameterSweep,
+  validateExecutionCosts,
 } from '../src/strategy-analysis.js';
 
 const activeStrategy = {
