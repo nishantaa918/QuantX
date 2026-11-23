@@ -2,6 +2,7 @@ const DEFAULT_HAC_OPTIONS = {
   bandwidth: 'newey-west',
   kernel: 'bartlett',
   finiteSampleCorrection: true,
+  hc0Only: false,
 };
 
 function isFiniteMatrix(matrix) {
@@ -86,7 +87,7 @@ export function fitHacRegression(y, X, options = {}) {
   } else {
     return { valid: false, error: 'unsupported_bandwidth_method' };
   }
-  lag = Math.max(1, Math.min(lag, maxLag));
+  lag = config.hc0Only && lag === 0 ? 0 : Math.max(1, Math.min(lag, maxLag));
 
   const xt = transpose(X);
   const xtx = multiply(xt, X);
