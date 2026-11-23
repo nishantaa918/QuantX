@@ -4,7 +4,7 @@ A browser-based quantitative research and simulation terminal.
 
 ## Historical market data
 
-Historical backtesting supports a small allowlisted US equity and ETF universe using daily raw OHLCV observations from Alpha Vantage: AAPL, MSFT, NVDA, AMZN, GOOGL, META, TSLA, SPY, QQQ, DIA, and IWM. The browser requests the same-origin route `/api/market-data/daily?symbol=SYMBOL`; the provider key is read only on the server and is never sent to the browser. Each symbol has an independent server-side cache.
+Historical data supports a small allowlisted US equity and ETF universe: AAPL, MSFT, NVDA, AMZN, GOOGL, META, TSLA, SPY, QQQ, DIA, and IWM. The same-origin route accepts `/api/market-data/daily?symbol=SYMBOL&adjustment=raw|adjusted`. Raw mode requests daily OHLCV; adjusted mode requests adjusted closes plus dividend and split metadata from Alpha Vantage. Adjusted endpoint access depends on the provider plan and may be unavailable on free plans. The provider key is read only on the server and is never sent to the browser. Cache entries are separated by symbol and adjustment mode.
 
 ### Local development
 
@@ -25,4 +25,4 @@ If the key is absent, the endpoint returns a clear `503 unavailable` response. S
 - `npm test` runs the unit and API-handler tests.
 - `npm run build` creates the production frontend bundle.
 
-QuantX is an educational research and simulation project. Historical observations are raw, unadjusted market data; splits and dividends are not reflected in the daily close series. Strategy positions and portfolio returns are simulated. It does not execute trades or provide investment advice.
+QuantX is an educational research and simulation project. Raw observations remain unadjusted; adjusted observations carry provider-adjusted closes and explicit dividend/split metadata. Adjusted close is a historical price adjustment, not a guarantee of a fully reconstructed dividend-reinvestment total-return series. Strategy positions and portfolio returns are simulated. It does not execute trades or provide investment advice.
