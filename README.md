@@ -4,7 +4,7 @@ A browser-based quantitative research and simulation terminal.
 
 ## Historical market data
 
-Historical data supports a small allowlisted US equity and ETF universe: AAPL, MSFT, NVDA, AMZN, GOOGL, META, TSLA, SPY, QQQ, DIA, and IWM. The same-origin route accepts `/api/market-data/daily?symbol=SYMBOL&adjustment=raw|adjusted`. Raw mode requests daily OHLCV; adjusted mode requests adjusted closes plus dividend and split metadata from Alpha Vantage. Adjusted endpoint access depends on the provider plan and may be unavailable on free plans. The provider key is read only on the server and is never sent to the browser. Cache entries are separated by symbol and adjustment mode.
+Historical data supports a small allowlisted US equity and ETF universe: AAPL, MSFT, NVDA, AMZN, GOOGL, META, TSLA, SPY, QQQ, DIA, and IWM. The same-origin route accepts `/api/market-data/daily?symbol=SYMBOL&adjustment=raw|adjusted`. Raw mode requests daily OHLCV; adjusted mode requests adjusted closes plus dividend and split metadata from Alpha Vantage. The Markets and Backtesting pages expose the price-basis selector, and saved historical experiments retain the basis used for the run. Adjusted endpoint access depends on the provider plan and may be unavailable on free plans. The provider key is read only on the server and is never sent to the browser. Cache entries are separated by symbol and adjustment mode.
 
 ### Local development
 
