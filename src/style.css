@@ -570,3 +570,18 @@ table { width: 100%; border-collapse: collapse; text-align: left; }
   .portfolio-research-controls .primary-button { width: 100%; }
   .portfolio-research-grid { grid-template-columns: minmax(0, 1fr); gap: 14px; }
 }
+
+
+/* Workspace control reliability and compact responsive actions */
+.field-label[hidden] { display: none !important; }
+.field-action { gap: 8px; flex-wrap: wrap; }
+.field-action > button { min-width: 0; }
+@media (max-width: 760px) {
+  .form-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; }
+  .form-grid .field-action { grid-column: 1 / -1; display: grid; grid-template-columns: minmax(0, 1fr); }
+  .form-grid .field-action > button { width: 100%; }
+}
+@media (max-width: 420px) {
+  .form-grid { grid-template-columns: minmax(0, 1fr); }
+  .form-grid .field-action { grid-column: auto; }
+}
