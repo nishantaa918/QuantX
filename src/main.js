@@ -1195,7 +1195,7 @@ document.addEventListener('click', (event) => {
   if (navigateButton) navigateTo(navigateButton.dataset.navigate);
 });
 
-secondaryView.addEventListener('click', (event) => {
+secondaryView.addEventListener('click', async (event) => {
   const actionButton = event.target.closest('[data-action]');
   if (!actionButton) return;
   const action = actionButton.dataset.action;
@@ -1210,17 +1210,22 @@ secondaryView.addEventListener('click', (event) => {
       return;
     }
     error.textContent = 'Loading historical observations for each selected asset…';
-    const results = await Promise.all(symbols.map(async (symbol) => {
-      const response = await fetch(`/api/market-data/daily?symbol=${encodeURIComponent(symbol)}&adjustment=${encodeURIComponent(priceBasis)}`, { headers: { Accept: 'application/json' } });
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload.message || `Could not load ${symbol} historical data.`);
-      if (payload.status !== 'historical' || payload.data?.symbol !== symbol || !Array.isArray(payload.data.observations)) throw new Error(`Invalid historical response for ${symbol}.`);
-      return toPriceSeries(payload.data.observations, { symbol, priceBasis });
-    }));
-    const analysis = analyzeEqualWeightPortfolio(results, { minimumObservations: 20 });
-    error.textContent = analysis.valid ? '' : analysis.error;
-    document.querySelector('#portfolio-lab-results').innerHTML = renderPortfolioAnalysisResults(analysis);
-    showToast(analysis.valid ? 'Portfolio diversification analysis completed.' : 'Portfolio analysis could not be completed.');
+    try {
+      const results = await Promise.all(symbols.map(async (symbol) => {
+        const response = await fetch(`/api/market-data/daily?symbol=${encodeURIComponent(symbol)}&adjustment=${encodeURIComponent(priceBasis)}`, { headers: { Accept: 'application/json' } });
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload.message || `Could not load ${symbol} historical data.`);
+        if (payload.status !== 'historical' || payload.data?.symbol !== symbol || !Array.isArray(payload.data.observations)) throw new Error(`Invalid historical response for ${symbol}.`);
+        return toPriceSeries(payload.data.observations, { symbol, priceBasis });
+      }));
+      const analysis = analyzeEqualWeightPortfolio(results, { minimumObservations: 20 });
+      error.textContent = analysis.valid ? '' : analysis.error;
+      document.querySelector('#portfolio-lab-results').innerHTML = renderPortfolioAnalysisResults(analysis);
+      showToast(analysis.valid ? 'Portfolio diversification analysis completed.' : 'Portfolio analysis could not be completed.');
+    } catch (requestError) {
+      error.textContent = requestError.message || 'Historical data could not be loaded for every selected asset.';
+      showToast('Portfolio analysis could not be completed.');
+    }
   }
 
   if (action === 'run-walk-forward') {
