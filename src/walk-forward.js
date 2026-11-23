@@ -63,10 +63,10 @@ export function runWalkForwardValidation(series, {
   }
   if (!Number.isInteger(trainWindow) || trainWindow < 30
     || !Number.isInteger(testWindow) || testWindow < 5
-    || !Number.isInteger(step) || step < testWindow
+    || !Number.isInteger(step) || step !== testWindow
     || !Number.isFinite(startingCapital) || startingCapital <= 0
     || !['sharpeRatio', 'totalReturn'].includes(selectionMetric)) {
-    return { valid: false, error: 'Use a training window of at least 30, a test window of at least 5, a step no shorter than the test window, positive starting capital, and a supported selection metric.', folds: [] };
+    return { valid: false, error: 'Use a training window of at least 30, a test window of at least 5, a step equal to the test window, positive starting capital, and a supported selection metric.', folds: [] };
   }
   if (!Array.isArray(shortWindows) || !Array.isArray(longWindows) || !shortWindows.length || !longWindows.length) {
     return { valid: false, error: 'At least one short and one long moving-average candidate are required.', folds: [] };
