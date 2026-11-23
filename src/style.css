@@ -523,3 +523,18 @@ table { width: 100%; border-collapse: collapse; text-align: left; }
 .execution-cost-grid .field-label { min-width: 0; }
 .execution-cost-grid input { width: 100%; min-height: 39px; padding: 0 10px; border: 1px solid var(--border-strong); background: #0b1219; color: var(--text); font-family: var(--font-mono); font-size: 11px; }
 @media (max-width: 680px) { .execution-cost-grid { grid-template-columns: minmax(0, 1fr); gap: 10px; padding: 11px; } }
+
+.walk-forward-panel { margin-top: 16px; }
+.walk-forward-panel > .panel-heading { align-items: center; margin-bottom: 15px; }
+.walk-forward-controls { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)) auto; align-items: end; gap: 12px; padding: 14px 0; border-top: 1px solid var(--border); }
+.walk-forward-controls .field-label { min-width: 0; }
+.walk-forward-controls input, .walk-forward-controls select { width: 100%; min-height: 39px; padding: 0 9px; border: 1px solid var(--border-strong); background: #0b1219; color: var(--text); font-size: 10px; }
+.walk-forward-table { min-width: 760px; margin-top: 12px; }
+.walk-forward-table th, .walk-forward-table td { padding: 0 10px; }
+.walk-forward-table th:first-child, .walk-forward-table td:first-child { padding-left: 3px; }
+@media (max-width: 680px) {
+  .walk-forward-panel { padding: 16px 13px; }
+  .walk-forward-controls { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .walk-forward-controls .field-action { grid-column: 1 / -1; }
+  .walk-forward-controls .field-action .primary-button { width: 100%; }
+}
