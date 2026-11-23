@@ -481,7 +481,7 @@ function experimentMetric(label, value, suffix) {
 
 function renderMonteCarloSummary(results, scenarioCount, years) {
   const drawdown = results.maximumDrawdown;
-  return `<section class="monte-carlo-distribution"><p class="section-kicker">TERMINAL-RETURN DISTRIBUTION / ${scenarioCount.toLocaleString()} PATHS / ${years} YEARS</p><div class="result-summary"><div><span>MEDIAN RETURN</span><strong class="${results.median >= 0 ? 'is-positive' : 'is-negative'}">${results.median >= 0 ? '+' : ''}${results.median.toFixed(1)}%</strong></div><div><span>5TH PERCENTILE</span><strong>${results.lower.toFixed(1)}%</strong></div><div><span>95TH PERCENTILE</span><strong>${results.upper.toFixed(1)}%</strong></div><div><span>POSITIVE PATHS</span><strong>${results.positiveRate.toFixed(1)}%</strong></div></div></section><section class="monte-carlo-distribution drawdown-distribution"><p class="section-kicker">MAXIMUM DRAWDOWN DISTRIBUTION / PER-PATH PEAK-TO-TROUGH</p><div class="result-summary drawdown-result-summary"><div><span>MEDIAN MAX DRAWDOWN</span><strong>${drawdown.median.toFixed(2)}%</strong></div><div><span>5TH PERCENTILE</span><strong>${drawdown.fifthPercentile.toFixed(2)}%</strong></div><div><span>95TH PERCENTILE</span><strong>${drawdown.ninetyFifthPercentile.toFixed(2)}%</strong></div><div><span>WORST OBSERVED</span><strong>${drawdown.worst.toFixed(2)}%</strong></div><div><span>BEST OBSERVED</span><strong>${drawdown.best.toFixed(2)}%</strong></div></div><p class="result-caption">Drawdown is calculated from each path’s running equity peak. Higher drawdown percentages represent worse losses.</p></section>`;
+  return `<section class="monte-carlo-distribution"><p class="section-kicker">TERMINAL-RETURN DISTRIBUTION / ${scenarioCount.toLocaleString()} PATHS / ${years} YEARS</p><div class="result-summary"><div><span>MEDIAN RETURN</span><strong class="${results.median >= 0 ? 'is-positive' : 'is-negative'}">${results.median >= 0 ? '+' : ''}${results.median.toFixed(1)}%</strong></div><div><span>5TH PERCENTILE</span><strong>${results.lower.toFixed(1)}%</strong></div><div><span>95TH PERCENTILE</span><strong>${results.upper.toFixed(1)}%</strong></div><div><span>POSITIVE PATHS</span><strong>${results.positiveRate.toFixed(1)}%</strong></div></div><p class="result-caption">Circular block bootstrap · ${results.observations} observed returns · block length ${results.blockLength} sessions · annualized historical volatility ${results.annualizedHistoricalVolatility.toFixed(2)}%.</p></section><section class="monte-carlo-distribution drawdown-distribution"><p class="section-kicker">MAXIMUM DRAWDOWN DISTRIBUTION / PER-PATH PEAK-TO-TROUGH</p><div class="result-summary drawdown-result-summary"><div><span>MEDIAN MAX DRAWDOWN</span><strong>${drawdown.median.toFixed(2)}%</strong></div><div><span>5TH PERCENTILE</span><strong>${drawdown.fifthPercentile.toFixed(2)}%</strong></div><div><span>95TH PERCENTILE</span><strong>${drawdown.ninetyFifthPercentile.toFixed(2)}%</strong></div><div><span>WORST OBSERVED</span><strong>${drawdown.worst.toFixed(2)}%</strong></div><div><span>BEST OBSERVED</span><strong>${drawdown.best.toFixed(2)}%</strong></div></div><p class="result-caption">Drawdown is calculated from each path’s running equity peak. These paths resample the selected series and cannot represent market conditions absent from that history.</p></section>`;
 }
 
 function renderPolicyHeatmap(initialMetric) {
@@ -493,7 +493,7 @@ function renderPolicyHeatmap(initialMetric) {
   ];
   const rows = [3, 5, 8, 10];
   const columns = [15, 20, 30, 50];
-  const results = runParameterSweep(currentSeries, strategyConfig, rows, columns);
+  const results = runParameterSweep(currentSeries, strategyConfig, rows, columns, executionCosts);
   const metric = metricOptions.some(([key]) => key === initialMetric) ? initialMetric : 'sharpeRatio';
   const values = results.map((result) => result.metrics[metric]).filter(Number.isFinite);
   const minimum = values.length ? Math.min(...values) : 0;
@@ -513,8 +513,8 @@ function renderPolicyHeatmap(initialMetric) {
     return cell ? `<td><button class="heat-cell" type="button" data-action="apply-heatmap" data-short-window="${shortWindow}" data-long-window="${longWindow}" title="${escapeHTML(cell.tooltip)}" aria-label="${escapeHTML(cell.tooltip)}" style="--heat:${(0.12 + cell.quality * 0.4).toFixed(2)}">${cell.value.toFixed(2)}${metric === 'sharpeRatio' ? '' : '%'}</button></td>` : '<td><span class="heat-cell heat-cell-unavailable" aria-label="Invalid parameter combination">--</span></td>';
   }).join('')}</tr>`).join('');
   return `<section class="panel page-panel heatmap-panel"><div class="panel-heading"><div><p class="section-kicker">CALCULATED PARAMETER SWEEP / ${results.length} COMBINATIONS</p><h2>Policy heatmap</h2></div><label class="field-label heatmap-metric-label" for="heatmap-metric">Color by<select id="heatmap-metric">${metricOptions.map(([key, label]) => `<option value="${key}" ${metric === key ? 'selected' : ''}>${label}</option>`).join('')}</select></label></div>
-    <p class="panel-subtitle">Each cell is a backtest on the current simulated series. Select a cell to apply its moving-average pair.</p>
-    ${results.length ? `<div class="heatmap-scroll"><table class="heatmap-table"><thead><tr><th scope="col">SHORT / LONG</th>${columns.map((value) => `<th scope="col">${value}</th>`).join('')}</tr></thead><tbody>${gridRows}</tbody></table></div><p class="heatmap-axis-label">LONG MOVING AVERAGE / SESSIONS</p><p class="table-note">Rows are short-window sessions. Hover or focus a cell for calculated return, drawdown, and volatility.</p>` : '<p class="empty-state">No valid parameter combinations for the current configuration. Review strategy parameters.</p>'}
+    <p class="panel-subtitle">Each cell uses the current series and saved execution costs, with at least 30 observations after its warm-up. Select a valid cell to apply its moving-average pair.</p>
+    ${results.length ? `<div class="heatmap-scroll"><table class="heatmap-table"><thead><tr><th scope="col">SHORT / LONG</th>${columns.map((value) => `<th scope="col">${value}</th>`).join('')}</tr></thead><tbody>${gridRows}</tbody></table></div><p class="heatmap-axis-label">LONG MOVING AVERAGE / SESSIONS</p><p class="table-note">Rows are short-window sessions. Cells need at least 30 post-warm-up observations. This series has ${currentSeries.values.length} prices; the full 16-cell sweep needs at least 80. Hover or focus a valid cell for calculated return, drawdown, and volatility.</p>` : '<p class="empty-state">No valid parameter combinations for the current configuration. Review strategy parameters.</p>'}
     </section>`;
 }
 
@@ -1260,7 +1260,8 @@ secondaryView.addEventListener('click', (event) => {
     const scenarioCount = Number(document.querySelector('#scenario-count').value);
     const years = Number(document.querySelector('#scenario-horizon').value);
     const errorElement = document.querySelector('#monte-carlo-error');
-    const results = runMonteCarlo(scenarioCount, years, simulationSeed + scenarioCount + years);
+    const seed = simulationSeed + scenarioCount + years;
+    const results = runMonteCarlo(scenarioCount, years, currentSeries, seed);
     if (!results.valid) {
       errorElement.textContent = results.error;
       document.querySelector('#monte-carlo-results').innerHTML = '<p class="empty-state">No scenarios were run. Correct the parameters above.</p>';
@@ -1268,10 +1269,8 @@ secondaryView.addEventListener('click', (event) => {
     }
     errorElement.textContent = '';
     document.querySelector('#monte-carlo-results').innerHTML = `${renderMonteCarloSummary(results, scenarioCount, years)}<p class="result-caption">Synthetic outcomes are not forecasts.</p>`;
-    const seed = simulationSeed + scenarioCount + years;
-    const series = generateSeries(currentPeriod, seed);
-    const monteCarlo = { ...results, scenarioCount, years, seed };
-    addExperiment(createExperimentRecord({ name: `Monte Carlo / ${scenarioCount.toLocaleString()} scenarios`, kind: 'monte-carlo', series, seed, monteCarlo }));
+    const monteCarlo = { ...results, scenarioCount, years, seed, sourcePeriod: currentSeries.period ?? currentPeriod };
+    addExperiment(createExperimentRecord({ name: `Monte Carlo / ${scenarioCount.toLocaleString()} scenarios`, kind: 'monte-carlo', series: currentSeries, seed, monteCarlo }));
     refreshCoveragePanels();
     showToast('Monte Carlo scenarios calculated and saved locally.');
   }
