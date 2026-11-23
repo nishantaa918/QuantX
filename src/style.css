@@ -558,7 +558,7 @@ table { width: 100%; border-collapse: collapse; text-align: left; }
 .portfolio-lab-panel { margin-top: 16px; }
 .portfolio-asset-picker { display: grid; grid-template-columns: repeat(auto-fit, minmax(125px, 1fr)); gap: 9px; padding: 15px 0; border-top: 1px solid var(--border); }
 .portfolio-asset-option { display: flex; align-items: center; gap: 9px; min-width: 0; padding: 10px; border: 1px solid var(--border); background: rgba(7, 12, 17, .28); cursor: pointer; }
-.portfolio-asset-option input { accent-color: var(--accent); }
+.portfolio-asset-option input { accent-color: var(--emerald); }
 .portfolio-asset-option span { display: grid; gap: 3px; min-width: 0; }
 .portfolio-asset-option strong { font-family: var(--font-mono); font-size: 11px; color: var(--text); }
 .portfolio-asset-option small { color: var(--subtle); font-size: 9px; }
