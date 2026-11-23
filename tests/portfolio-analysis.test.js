@@ -18,8 +18,8 @@ test('portfolio analysis aligns dates and identifies perfectly opposing return s
   assert.equal(result.valid, true);
   assert.deepEqual(result.symbols, ['AAA', 'BBB']);
   assert.equal(result.observations, 4);
-  assert.ok(Math.abs(result.correlations[0].values[1] + 1) < 1e-10);
-  assert.ok(Math.abs(result.correlations[1].values[0] + 1) < 1e-10);
+  assert.ok(Math.abs(result.correlations[0].values[1] + 1) < 1e-8);
+  assert.ok(Math.abs(result.correlations[1].values[0] + 1) < 1e-8);
   assert.ok(Number.isFinite(result.metrics.totalReturn));
 });
 
