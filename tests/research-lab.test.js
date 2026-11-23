@@ -99,6 +99,16 @@ function clickAction(app, action, dataset = {}) {
   });
 }
 
+test('Markets workspace exposes the portfolio diversification lab', async () => {
+  const app = await bootApplication(new Map());
+  app.nav[1].listeners.click();
+  const html = app.getElement('#secondary-view').innerHTML;
+  assert.match(html, /Portfolio diversification lab/);
+  assert.match(html, /AAPL, MSFT, SPY/);
+  assert.match(html, /run-portfolio-analysis/);
+  assert.match(html, /Adjusted close/);
+});
+
 test('backtest and Monte Carlo experiments reload reproducibly and can be deleted', async () => {
   const storage = new Map();
   const app = await bootApplication(storage);
