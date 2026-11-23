@@ -50,6 +50,7 @@ let liveSimulationChart;
 let liveSimulationController;
 let liveSimulationHistoryWindow = 60;
 let historicalMarketData = null;
+let historicalSymbol = 'AAPL';
 let selectedHistoricalSymbol = 'AAPL';
 let historicalMarketChart;
 let historicalLoadState = 'idle';
@@ -1158,6 +1159,20 @@ document.addEventListener('click', (event) => {
   if (deleteButton) deleteExperiment(deleteButton.dataset.deleteExperiment);
   const navigateButton = event.target.closest('[data-navigate]');
   if (navigateButton) navigateTo(navigateButton.dataset.navigate);
+});
+
+secondaryView.addEventListener('change', (event) => {
+  if (event.target.id === 'historical-symbol-select') {
+    historicalSymbol = event.target.value;
+    historicalMarketData = null;
+    historicalLoadState = 'idle';
+    historicalLoadError = '';
+    renderHistoricalMarketState();
+  }
+  if (event.target.id === 'backtest-data-source') {
+    const symbolField = document.querySelector('#backtest-symbol');
+    if (symbolField) symbolField.disabled = event.target.value !== 'historical';
+  }
 });
 
 secondaryView.addEventListener('click', (event) => {
