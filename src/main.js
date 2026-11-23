@@ -530,15 +530,15 @@ function renderMarketsPage() {
   return `${renderPageIntro('MARKET RESEARCH', 'Historical data & replay', 'Real historical observations and synthetic replay are presented separately.')}
     ${renderHistoricalMarketPanel()}
     <section class="panel replay-panel" aria-labelledby="replay-title">
-      <div class="panel-heading"><div><p class="section-kicker">${currentSeries.period === 'HISTORICAL' ? 'AAPL / HISTORICAL DATA' : `${escapeHTML(currentPeriod)} / SYNTHETIC MARKET DATA`}</p><h2 id="replay-title">Session replay</h2></div><span class="sim-tag">${currentSeries.period === 'HISTORICAL' ? 'HISTORICAL' : 'SIMULATED'}</span></div>
+      <div class="panel-heading"><div><p class="section-kicker">${currentSeries.period === 'HISTORICAL' ? '${escapeHTML(currentSeries.symbol ?? 'HISTORICAL')} / HISTORICAL DATA' : `${escapeHTML(currentPeriod)} / SYNTHETIC MARKET DATA`}</p><h2 id="replay-title">Session replay</h2></div><span class="sim-tag">${currentSeries.period === 'HISTORICAL' ? 'HISTORICAL' : 'SIMULATED'}</span></div>
       <div class="replay-metrics"><div><span>SESSION</span><strong id="replay-session">--</strong></div><div><span>ASSET PRICE</span><strong id="replay-price">--</strong></div><div><span>MA (${strategyConfig.shortWindow}) / MA (${strategyConfig.longWindow})</span><strong id="replay-averages">--</strong></div><div><span>STRATEGY SIGNAL</span><strong id="replay-signal">--</strong></div><div><span>PORTFOLIO VALUE</span><strong id="replay-portfolio">--</strong></div></div>
       <div class="replay-chart-frame"><canvas id="replay-chart" role="img" aria-label="Portfolio value as the simulated market replay advances"></canvas></div>
       <p class="empty-state replay-unavailable" id="replay-unavailable" hidden></p>
       <div class="replay-controls"><button class="icon-button replay-control" type="button" data-action="replay-prev" aria-label="Previous session" title="Previous session"><span data-icon="StepBack"></span></button><button class="primary-button replay-play" id="replay-play" type="button" data-action="replay-play"><span data-icon="Play"></span> Play</button><button class="icon-button replay-control" type="button" data-action="replay-next" aria-label="Next session" title="Next session"><span data-icon="StepForward"></span></button><button class="secondary-button replay-reset" type="button" data-action="replay-reset">Restart</button><label class="replay-slider-label" for="replay-slider">TIMELINE</label><input id="replay-slider" type="range" min="0" max="${Math.max(0, currentSeries.values.length - 1)}" value="0" aria-label="Replay session" /><span id="replay-step-count" class="replay-step-count">1 / ${currentSeries.values.length}</span></div>
-      <p class="table-note">${currentSeries.period === 'HISTORICAL' ? 'Replay uses the preserved AAPL daily closing observations and next-session strategy positions. Portfolio values are simulated.' : 'Replay uses the same deterministic synthetic price series and next-session strategy positions as the backtest. Portfolio values are simulated.'}</p>
+      <p class="table-note">${currentSeries.period === 'HISTORICAL' ? 'Replay uses the preserved historical daily closing observations and next-session strategy positions. Portfolio values are simulated.' : 'Replay uses the same deterministic synthetic price series and next-session strategy positions as the backtest. Portfolio values are simulated.'}</p>
     </section>
     ${renderCoverageMonitor(['Market scenarios', 'Volatility regimes'], 'Scenario coverage')}
-    <p class="disclaimer-line"><span class="status-pulse"></span>${currentSeries.period === 'HISTORICAL' ? 'Historical AAPL observations are provider data; replayed portfolio values remain simulated.' : 'Market series and replay values are synthetic. No live market feed is connected.'}</p>`;
+    <p class="disclaimer-line"><span class="status-pulse"></span>${currentSeries.period === 'HISTORICAL' ? 'Historical provider observations are shown separately; replayed portfolio values remain simulated.' : 'Market series and replay values are synthetic. No live market feed is connected.'}</p>`;
 }
 
 function historicalSymbolOptions(selected = selectedHistoricalSymbol) {
@@ -571,7 +571,7 @@ function renderHistoricalMarketState() {
   button.textContent = historicalMarketData ? 'Refresh selected history' : 'Load selected history';
   message.hidden = Boolean(historicalMarketData) || historicalLoadState === 'loading';
   message.textContent = historicalLoadError || 'No historical response loaded. Configure the server key to request the selected symbol's daily data.';
-  if (error) error.textContent = historicalLoadState === 'loading' ? 'Requesting AAPL daily data from the server-side provider proxy.' : historicalLoadError;
+  if (error) error.textContent = historicalLoadState === 'loading' ? 'Requesting selected daily data from the server-side provider proxy.' : historicalLoadError;
   const content = document.querySelector('#historical-market-content');
   if (content) content.hidden = !historicalMarketData;
 }
@@ -639,7 +639,7 @@ function renderBacktestingPage() {
     <section class="panel page-panel"><div class="panel-heading"><div><p class="section-kicker">RUN PARAMETERS</p><h2>Backtest setup</h2></div><span class="sim-tag">SYNTHETIC / HISTORICAL</span></div>
       <div class="form-grid"><label class="field-label" for="backtest-data-source">Data source<select id="backtest-data-source"><option value="synthetic">Synthetic price history</option><option value="historical">Historical daily closes</option></select></label><label class="field-label" for="backtest-symbol">Historical symbol<select id="backtest-symbol" data-historical-symbol>${historicalSymbolOptions()}</select></label><label class="field-label" for="backtest-period">Synthetic period<select id="backtest-period">${periodOptions(currentPeriod)}</select></label><label class="field-label" for="backtest-seed">Synthetic seed<input id="backtest-seed" type="number" min="0" step="1" value="${simulationSeed}" /></label><div class="field-action"><button class="primary-button" type="button" data-action="run-backtest"><span data-icon="Activity"></span> Run backtest</button></div></div>
       <div class="execution-cost-grid"><label class="field-label" for="commission-bps">Commission (bps / turnover)<input id="commission-bps" type="number" min="0" max="100" step="0.1" value="${executionCosts.commissionBps}" /></label><label class="field-label" for="slippage-bps">Slippage (bps / turnover)<input id="slippage-bps" type="number" min="0" max="100" step="0.1" value="${executionCosts.slippageBps}" /></label></div>
-      <p class="table-note">Historical mode fetches AAPL daily observations from the existing server proxy. Execution costs are illustrative basis-point assumptions charged on next-session turnover; they are not broker quotes. Period and seed apply only to synthetic mode.</p>
+      <p class="table-note">Historical mode fetches daily observations for the selected allowlisted US equity or ETF from the existing server proxy. Execution costs are illustrative basis-point assumptions charged on next-session turnover; they are not broker quotes. Period and seed apply only to synthetic mode.</p>
       <p class="panel-subtitle active-strategy-label">Active strategy: <strong>${escapeHTML(getStrategyName(strategyConfig.type))}</strong> / MA ${strategyConfig.shortWindow} - ${strategyConfig.longWindow}</p><p class="form-error" id="backtest-run-error" aria-live="polite"></p>
       <div class="result-block" id="backtest-results">${renderBacktestResults(latestBacktest)}</div>
     </section>
@@ -750,7 +750,7 @@ function renderSettingsPage() {
   return `${renderPageIntro('WORKSPACE PREFERENCES', 'Settings', 'Adjust the local research interface. No account or remote service is connected.')}
     <section class="panel page-panel settings-panel"><div class="panel-heading"><div><p class="section-kicker">DISPLAY</p><h2>Interface preferences</h2></div><span class="panel-index">03</span></div>
       <div class="setting-row"><div><h3>Higher contrast</h3><p>Increase separation between panels, labels, and borders.</p></div><button class="setting-switch ${raised ? 'is-on' : ''}" type="button" data-action="toggle-contrast" role="switch" aria-checked="${raised}" aria-label="Toggle higher contrast"><span></span></button></div>
-      <div class="setting-row"><div><h3>Simulation data</h3><p>Synthetic prices are generated locally; historical AAPL observations are requested from the configured market-data provider.</p></div><span class="setting-value">LOCAL ONLY</span></div>
+      <div class="setting-row"><div><h3>Simulation data</h3><p>Synthetic prices are generated locally; historical observations for supported US equities and ETFs are requested from the configured market-data provider.</p></div><span class="setting-value">LOCAL ONLY</span></div>
       <div class="setting-row"><div><h3>Experiment storage</h3><p>Saved runs are held in this browser's local storage.</p></div><span class="setting-value">${experiments.length} SAVED</span></div>
     </section>`;
 }
