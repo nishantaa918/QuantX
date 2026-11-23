@@ -22,6 +22,7 @@ import { createReplayController } from './replay-controller.js';
 import { createSimulationController, createSyntheticSimulation } from './simulation-engine.js';
 import { analyzeStrategyBacktest, detectMarketRegimes, testMomentumHypothesis } from './research-engine.js';
 import { runWalkForwardValidation } from './walk-forward.js';
+import { analyzeEqualWeightPortfolio } from './portfolio-research.js';
 
 const STORAGE_KEY = 'quantx.midnight.experiments';
 const STRATEGY_STORAGE_KEY = 'quantx.midnight.strategy';
@@ -690,6 +691,40 @@ function renderMonteCarloPage() {
     <p class="disclaimer-line"><span class="status-pulse"></span>Scenario outputs are synthetic and are not forecasts.</p>`;
 }
 
+function getPortfolioResearchAssets() {
+  const latestBySymbol = new Map();
+  for (const experiment of experiments) {
+    if (experiment.dataSource !== 'historical' || !experiment.backtest?.valid || !experiment.series?.values?.length) continue;
+    const symbol = String(experiment.symbol ?? experiment.series.symbol ?? '').trim().toUpperCase();
+    if (!symbol || latestBySymbol.has(symbol)) continue;
+    latestBySymbol.set(symbol, { symbol, series: experiment.series });
+  }
+  const assets = [...latestBySymbol.values()];
+  const preferredBasis = assets[0]?.series.priceBasis ?? assets[0]?.series.adjustment ?? 'raw';
+  return assets.filter((asset) => (asset.series.priceBasis ?? asset.series.adjustment ?? 'raw') === preferredBasis).slice(0, 10);
+}
+
+function renderPortfolioResearchResults(result) {
+  if (!result?.valid) return `<p class="empty-state">${escapeHTML(result?.error ?? 'Run the portfolio analysis to calculate aligned cross-asset results.')}</p>`;
+  const assetRows = result.assetStats.map((asset) => `<tr><td>${escapeHTML(asset.symbol)}</td><td class="mono-cell">${asset.weightPct.toFixed(1)}%</td><td class="mono-cell ${asset.totalReturnPct >= 0 ? 'is-positive' : 'is-negative'}">${asset.totalReturnPct >= 0 ? '+' : ''}${asset.totalReturnPct.toFixed(2)}%</td><td class="mono-cell">${asset.annualizedVolatilityPct.toFixed(2)}%</td></tr>`).join('');
+  const matrixHead = result.symbols.map((symbol) => `<th>${escapeHTML(symbol)}</th>`).join('');
+  const matrixRows = result.correlationMatrix.map((row) => `<tr><th>${escapeHTML(row.symbol)}</th>${row.values.map((value) => `<td class="mono-cell">${value === null ? '—' : value.toFixed(2)}</td>`).join('')}</tr>`).join('');
+  return `<div class="result-summary"><div><span>PORTFOLIO RETURN</span><strong class="${result.metrics.totalReturnPct >= 0 ? 'is-positive' : 'is-negative'}">${result.metrics.totalReturnPct >= 0 ? '+' : ''}${result.metrics.totalReturnPct.toFixed(2)}%</strong></div><div><span>ANNUALIZED VOLATILITY</span><strong>${result.metrics.annualizedVolatilityPct.toFixed(2)}%</strong></div><div><span>SHARPE / 0% RF</span><strong>${result.metrics.sharpeRatio === null ? '—' : result.metrics.sharpeRatio.toFixed(2)}</strong></div><div><span>MAX DRAWDOWN</span><strong>${result.metrics.maxDrawdownPct.toFixed(2)}%</strong></div><div><span>DIVERSIFICATION BENEFIT</span><strong>${result.metrics.diversificationBenefitPct === null ? '—' : result.metrics.diversificationBenefitPct.toFixed(2) + '%'}</strong></div></div>
+    <p class="result-caption">${result.symbols.length} assets / ${result.observations} common price dates / ${result.returnObservations} daily returns / ${result.priceBasis.toUpperCase()} prices. Equal weights are reset at each shared observation.</p>
+    <div class="portfolio-research-grid"><div><p class="section-kicker">ASSET CONTRIBUTION INPUTS</p><div class="table-scroll"><table class="workspace-table"><thead><tr><th>ASSET</th><th>WEIGHT</th><th>ALIGNED RETURN</th><th>ANNUALIZED VOL</th></tr></thead><tbody>${assetRows}</tbody></table></div></div><div><p class="section-kicker">DAILY RETURN CORRELATION</p><div class="table-scroll"><table class="workspace-table correlation-table"><thead><tr><th></th>${matrixHead}</tr></thead><tbody>${matrixRows}</tbody></table></div></div></div>
+    <p class="research-caveat">${result.caveats.map(escapeHTML).join(' ')}</p>`;
+}
+
+function renderPortfolioResearchPanel() {
+  const assets = getPortfolioResearchAssets();
+  const symbols = assets.map((asset) => asset.symbol);
+  return `<section class="panel page-panel portfolio-research-panel" id="portfolio-research-panel">
+    <div class="panel-heading"><div><p class="section-kicker">CROSS-ASSET RESEARCH</p><h2>Portfolio diversification lab</h2><p class="panel-subtitle">Compare saved historical assets on their shared dates using a simple daily-rebalanced equal-weight baseline.</p></div><span class="sim-tag">RESEARCH ONLY</span></div>
+    <div class="portfolio-research-controls"><div><p class="attribute-label">ELIGIBLE SAVED ASSETS</p><strong>${symbols.length ? symbols.map(escapeHTML).join(' / ') : 'None yet'}</strong><p class="table-note">Uses the latest saved historical backtest per ticker, up to 10 assets, with a common price basis. Save at least two historical runs for different tickers.</p></div><button class="primary-button" type="button" data-action="run-portfolio-research" ${symbols.length < 2 ? 'disabled' : ''}>Analyze diversification</button></div>
+    <div id="portfolio-research-results"><p class="empty-state">${symbols.length < 2 ? 'Two or more saved historical tickers are required.' : 'Run the analysis to calculate aligned returns and a correlation matrix.'}</p></div>
+  </section>`;
+}
+
 function renderResearchPage() {
   const selected = experiments.find((experiment) => experiment.id === selectedExperimentId) ?? experiments[0] ?? null;
   selectedExperimentId = selected?.id ?? null;
@@ -704,6 +739,7 @@ function renderResearchPage() {
     </section>
     <section class="panel page-panel experiment-analysis-panel"><div class="panel-heading"><div><p class="section-kicker">CALCULATED RESULTS</p><h2>Experiment analysis</h2></div></div>${analysis}</section>
     ${renderResearchIntelligencePanel(selected)}
+    ${renderPortfolioResearchPanel()}
     ${renderPolicyHeatmap('sharpeRatio')}
     ${renderCoverageMonitor(null, 'Research coverage')}`;
 }
@@ -1188,6 +1224,12 @@ secondaryView.addEventListener('click', (event) => {
     });
     document.querySelector('#walk-forward-results').innerHTML = renderWalkForwardResults(result);
     showToast(result.valid ? `Walk-forward validation completed: ${result.folds.length} folds.` : 'Walk-forward validation could not be completed.');
+  }
+  if (action === 'run-portfolio-research') {
+    const result = analyzeEqualWeightPortfolio(getPortfolioResearchAssets());
+    const output = document.querySelector('#portfolio-research-results');
+    if (output) output.innerHTML = renderPortfolioResearchResults(result);
+    showToast(result.valid ? 'Cross-asset portfolio analysis completed.' : 'Portfolio analysis could not be completed.');
   }
   if (action === 'run-research-analysis') {
     const selected = experiments.find((experiment) => experiment.id === selectedExperimentId) ?? experiments[0] ?? null;
