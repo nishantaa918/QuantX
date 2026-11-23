@@ -5,6 +5,7 @@ on:
     branches:
       - main
       - feature/historical-data-backtesting
+      - 'feature/**'
   pull_request:
     branches:
       - main
