@@ -570,7 +570,7 @@ function renderHistoricalMarketState() {
   button.disabled = historicalLoadState === 'loading';
   button.textContent = historicalMarketData ? 'Refresh selected history' : 'Load selected history';
   message.hidden = Boolean(historicalMarketData) || historicalLoadState === 'loading';
-  message.textContent = historicalLoadError || "No historical response loaded. Configure the server key to request the selected symbol's daily data.";
+  message.textContent = historicalLoadError || "No historical response loaded. Configure the server key to request daily data for the selected ticker.";
   if (error) error.textContent = historicalLoadState === 'loading' ? 'Requesting selected daily data from the server-side provider proxy.' : historicalLoadError;
   const content = document.querySelector('#historical-market-content');
   if (content) content.hidden = !historicalMarketData;
@@ -1158,6 +1158,20 @@ document.addEventListener('click', (event) => {
   if (deleteButton) deleteExperiment(deleteButton.dataset.deleteExperiment);
   const navigateButton = event.target.closest('[data-navigate]');
   if (navigateButton) navigateTo(navigateButton.dataset.navigate);
+});
+
+secondaryView.addEventListener('change', (event) => {
+  if (event.target.id === 'historical-symbol-select') {
+    selectedHistoricalSymbol = event.target.value;
+    historicalMarketData = null;
+    historicalLoadState = 'idle';
+    historicalLoadError = '';
+    renderHistoricalMarketState();
+  }
+  if (event.target.id === 'backtest-data-source') {
+    const symbolField = document.querySelector('#backtest-symbol');
+    if (symbolField) symbolField.disabled = event.target.value !== 'historical';
+  }
 });
 
 secondaryView.addEventListener('click', (event) => {
