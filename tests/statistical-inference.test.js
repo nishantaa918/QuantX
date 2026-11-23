@@ -45,7 +45,7 @@ test('Bonferroni, BH and BY return adjusted p-values in original order', () => {
   assert.deepEqual(bonferroni.adjustedPValues, [0.04, 0.16, 0.12, 0.8]);
   assert.deepEqual(bh.adjustedPValues, [0.04, 0.05333333333333334, 0.05333333333333334, 0.2]);
   assert.ok(by.adjustedPValues.every((value, index) => value >= bh.adjustedPValues[index]));
-  assert.deepEqual(by.reject, [true, false, false, false]);
+  assert.deepEqual(by.reject, [false, false, false, false]);
 });
 
 test('multiple-testing helpers validate p-values and options', () => {
