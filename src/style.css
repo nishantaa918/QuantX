@@ -554,3 +554,19 @@ table { width: 100%; border-collapse: collapse; text-align: left; }
 
 .downside-risk-diagnostics { margin-top: 14px; }
 .downside-risk-diagnostics .section-kicker { margin-bottom: 8px; }
+
+.portfolio-research-panel { margin-top: 16px; }
+.portfolio-research-controls { display: flex; justify-content: space-between; align-items: center; gap: 18px; padding: 14px 0; border-top: 1px solid var(--border); }
+.portfolio-research-controls > div { min-width: 0; }
+.portfolio-research-controls strong { display: block; margin-top: 5px; color: var(--text); font-family: var(--font-mono); font-size: 12px; letter-spacing: .04em; overflow-wrap: anywhere; }
+.portfolio-research-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 18px; margin-top: 16px; }
+.portfolio-research-grid > div { min-width: 0; }
+.portfolio-research-grid .section-kicker { margin-bottom: 8px; }
+.correlation-table { min-width: 240px; }
+.correlation-table th, .correlation-table td { padding: 9px 10px; text-align: right; }
+.correlation-table th:first-child { text-align: left; }
+@media (max-width: 760px) {
+  .portfolio-research-controls { align-items: stretch; flex-direction: column; }
+  .portfolio-research-controls .primary-button { width: 100%; }
+  .portfolio-research-grid { grid-template-columns: minmax(0, 1fr); gap: 14px; }
+}

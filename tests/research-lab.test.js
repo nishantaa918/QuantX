@@ -8,6 +8,7 @@ import { SUPPORTED_HISTORICAL_SYMBOLS, toPriceSeries } from '../src/market-data.
 import * as research from '../src/research-engine.js';
 import { createSimulationController, createSyntheticSimulation } from '../src/simulation-engine.js';
 import { runWalkForwardValidation } from '../src/walk-forward.js';
+import { analyzeEqualWeightPortfolio } from '../src/portfolio-research.js';
 
 class ElementStub {
   constructor(dataset = {}) {
@@ -76,6 +77,7 @@ async function bootApplication(storage) {
     SUPPORTED_HISTORICAL_SYMBOLS,
     toPriceSeries,
     runWalkForwardValidation,
+    analyzeEqualWeightPortfolio,
     createPriceChart: () => chart,
     createLiveSimulationChart: () => chart,
     createReplayChart: () => chart,
@@ -221,4 +223,19 @@ test('adjusted historical backtests use adjusted closes and preserve their basis
   assert.equal(loaded.series.priceBasis, 'adjusted');
   assert.equal(loaded.series.values[0], 90);
   assert.equal(loaded.series.observations[0].rawClose, 100);
+});
+
+
+test('Research Lab exposes saved cross-asset analysis and renders equal-weight results', async () => {
+  const app = await bootApplication(new Map());
+  vm.runInContext(`experiments = [
+    { dataSource: 'historical', backtest: { valid: true }, symbol: 'AAPL', series: { priceBasis: 'adjusted', labels: ['2025-01-01', '2025-01-02', '2025-01-03'], values: [100, 102, 101] } },
+    { dataSource: 'historical', backtest: { valid: true }, symbol: 'MSFT', series: { priceBasis: 'adjusted', labels: ['2025-01-01', '2025-01-02', '2025-01-03'], values: [200, 201, 204] } },
+  ]`, app.context);
+  const panel = vm.runInContext('renderPortfolioResearchPanel()', app.context);
+  assert.match(panel, /AAPL \/ MSFT/);
+  assert.match(panel, /Analyze diversification/);
+  clickAction(app, 'run-portfolio-research');
+  assert.match(app.getElement('#portfolio-research-results').innerHTML, /PORTFOLIO RETURN/);
+  assert.match(app.getElement('#portfolio-research-results').innerHTML, /DAILY RETURN CORRELATION/);
 });

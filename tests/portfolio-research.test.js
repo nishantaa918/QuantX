@@ -1,0 +1,60 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import { analyzeEqualWeightPortfolio } from '../src/portfolio-research.js';
+
+function asset(symbol, values, labels = null, priceBasis = 'adjusted') {
+  const dates = labels ?? Array.from({ length: values.length }, (_, index) => `2025-01-0${index + 1}`);
+  return {
+    symbol,
+    series: {
+      period: 'HISTORICAL',
+      priceBasis,
+      labels: dates,
+      values,
+    },
+  };
+}
+
+test('equal-weight portfolio aligns dates and computes reproducible portfolio metrics', () => {
+  const result = analyzeEqualWeightPortfolio([
+    asset('AAPL', [100, 110, 121, 110]),
+    asset('MSFT', [100, 100, 110, 121]),
+  ]);
+  assert.equal(result.valid, true);
+  assert.deepEqual(result.symbols, ['AAPL', 'MSFT']);
+  assert.equal(result.observations, 4);
+  assert.equal(result.returnObservations, 3);
+  assert.equal(result.priceBasis, 'adjusted');
+  assert.equal(result.assetStats[0].weightPct, 50);
+  assert.ok(Number.isFinite(result.metrics.totalReturnPct));
+  assert.ok(Number.isFinite(result.metrics.annualizedVolatilityPct));
+  assert.ok(Number.isFinite(result.metrics.maxDrawdownPct));
+  assert.equal(result.correlationMatrix.length, 2);
+  assert.equal(result.correlationMatrix[0].values[0], 1);
+  assert.equal(result.correlationMatrix[1].values[1], 1);
+  assert.equal(result.correlationMatrix[0].values[1], result.correlationMatrix[1].values[0]);
+});
+
+test('portfolio analysis inner-joins shared trading dates before calculating returns', () => {
+  const first = asset('AAPL', [100, 110, 121], ['2025-01-01', '2025-01-02', '2025-01-04']);
+  const second = asset('SPY', [200, 220, 242, 250], ['2025-01-01', '2025-01-02', '2025-01-03', '2025-01-04']);
+  const result = analyzeEqualWeightPortfolio([first, second]);
+  assert.equal(result.valid, true);
+  assert.deepEqual(result.commonDates, ['2025-01-01', '2025-01-02', '2025-01-04']);
+  assert.equal(result.returnObservations, 2);
+});
+
+test('portfolio analysis rejects duplicate tickers, mixed price bases and insufficient overlap', () => {
+  assert.equal(analyzeEqualWeightPortfolio([asset('AAPL', [100, 101, 102]), asset('AAPL', [100, 102, 104])]).valid, false);
+  assert.match(analyzeEqualWeightPortfolio([asset('AAPL', [100, 101, 102]), asset('SPY', [100, 101, 102], undefined, 'raw')]).error, /same price basis/);
+  const first = asset('AAPL', [100, 101, 102], ['2025-01-01', '2025-01-02', '2025-01-04']);
+  const second = asset('SPY', [200, 201, 202], ['2025-01-01', '2025-01-03', '2025-01-05']);
+  assert.match(analyzeEqualWeightPortfolio([first, second]).error, /three shared trading dates/);
+});
+
+test('portfolio analysis validates sample size, dates, values, asset count and capital', () => {
+  assert.equal(analyzeEqualWeightPortfolio([asset('AAPL', [100, 101, 102])]).valid, false);
+  assert.equal(analyzeEqualWeightPortfolio(Array.from({ length: 11 }, (_, index) => asset(`A${index}`, [100, 101, 102]))).valid, false);
+  assert.equal(analyzeEqualWeightPortfolio([asset('AAPL', [100, 101, 102]), asset('SPY', [100, 101, 102])], { startingCapital: 0 }).valid, false);
+  assert.equal(analyzeEqualWeightPortfolio([asset('AAPL', [100, 101, 102], ['2025-01-01', '2025-01-01', '2025-01-03']), asset('SPY', [100, 101, 102])]).valid, false);
+});
