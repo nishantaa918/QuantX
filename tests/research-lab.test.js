@@ -4,6 +4,7 @@ import test from 'node:test';
 import vm from 'node:vm';
 import { calculatePerformance, generateSeries, runMonteCarlo } from '../src/data.js';
 import * as policy from '../src/strategy-analysis.js';
+import * as research from '../src/research-engine.js';
 import { createSimulationController, createSyntheticSimulation } from '../src/simulation-engine.js';
 
 class ElementStub {
@@ -69,6 +70,7 @@ async function bootApplication(storage) {
     generateSeries,
     runMonteCarlo,
     ...policy,
+    ...research,
     createPriceChart: () => chart,
     createLiveSimulationChart: () => chart,
     createReplayChart: () => chart,
@@ -125,7 +127,16 @@ test('backtest and Monte Carlo experiments reload reproducibly and can be delete
   assert.deepEqual(JSON.parse(JSON.stringify(loadedMonteCarlo.monteCarlo)), JSON.parse(JSON.stringify(expectedMonteCarlo)));
 
   reloaded.nav[5].listeners.click();
-  assert.match(reloaded.getElement('#secondary-view').innerHTML, /data-delete-experiment=/);
+  const researchMarkup = reloaded.getElement('#secondary-view').innerHTML;
+  assert.match(researchMarkup, /data-delete-experiment=/);
+  assert.match(researchMarkup, /MARKET REGIME DETECTOR/);
+  assert.match(researchMarkup, /STRATEGY AUTOPSY/);
+  assert.match(researchMarkup, /Momentum hypothesis test/);
+  reloaded.getElement('#regime-window').value = '20';
+  reloaded.getElement('#hypothesis-lookback').value = '5';
+  reloaded.getElement('#hypothesis-permutations').value = '199';
+  clickAction(reloaded, 'run-research-analysis');
+  assert.match(reloaded.getElement('#research-intelligence').outerHTML ?? '', /research-intelligence/);
   const deleteId = savedMonteCarlo.id;
   reloaded.documentHandlers.click({
     target: { closest: (selector) => selector === '[data-delete-experiment]' ? new ElementStub({ deleteExperiment: deleteId }) : null },
