@@ -417,6 +417,7 @@ function renderWorkspacePage(page) {
     settings: renderSettingsPage,
   };
   secondaryView.innerHTML = pageRenderers[page]();
+  if (page === 'backtesting') syncBacktestSourceControls();
   hydrateIcons(secondaryView);
   if (page === 'markets') {
     initializeReplay();
@@ -479,6 +480,29 @@ function experimentMetric(label, value, suffix) {
   return `<div><span>${escapeHTML(label)}</span><strong>${formatted}</strong></div>`;
 }
 
+function syncBacktestSourceControls() {
+  const source = document.querySelector('#backtest-data-source')?.value ?? 'synthetic';
+  document.querySelectorAll('[data-backtest-mode]').forEach((field) => {
+    field.hidden = field.dataset.backtestMode !== source;
+  });
+}
+
+function applyScenarioPeriod() {
+  const period = document.querySelector('#scenario-period')?.value;
+  if (!marketPeriodLengths[period]) {
+    showToast('Choose a supported synthetic source period.');
+    return;
+  }
+  currentPeriod = period;
+  currentSeries = generateSeries(currentPeriod, simulationSeed);
+  refreshPolicyState();
+  updatePriceChart(performanceChart, currentSeries);
+  updatePeriodButtons();
+  updateDashboard(currentSeries);
+  renderWorkspacePage('monte-carlo');
+  showToast(`Scenario source updated to ${period} synthetic history.`);
+}
+
 function renderMonteCarloSummary(results, scenarioCount, years) {
   const drawdown = results.maximumDrawdown;
   return `<section class="monte-carlo-distribution"><p class="section-kicker">TERMINAL-RETURN DISTRIBUTION / ${scenarioCount.toLocaleString()} PATHS / ${years} YEARS</p><div class="result-summary"><div><span>MEDIAN RETURN</span><strong class="${results.median >= 0 ? 'is-positive' : 'is-negative'}">${results.median >= 0 ? '+' : ''}${results.median.toFixed(1)}%</strong></div><div><span>5TH PERCENTILE</span><strong>${results.lower.toFixed(1)}%</strong></div><div><span>95TH PERCENTILE</span><strong>${results.upper.toFixed(1)}%</strong></div><div><span>POSITIVE PATHS</span><strong>${results.positiveRate.toFixed(1)}%</strong></div></div><p class="result-caption">Circular block bootstrap · ${results.observations} observed returns · block length ${results.blockLength} sessions · annualized historical volatility ${results.annualizedHistoricalVolatility.toFixed(2)}%.</p></section><section class="monte-carlo-distribution drawdown-distribution"><p class="section-kicker">MAXIMUM DRAWDOWN DISTRIBUTION / PER-PATH PEAK-TO-TROUGH</p><div class="result-summary drawdown-result-summary"><div><span>MEDIAN MAX DRAWDOWN</span><strong>${drawdown.median.toFixed(2)}%</strong></div><div><span>5TH PERCENTILE</span><strong>${drawdown.fifthPercentile.toFixed(2)}%</strong></div><div><span>95TH PERCENTILE</span><strong>${drawdown.ninetyFifthPercentile.toFixed(2)}%</strong></div><div><span>WORST OBSERVED</span><strong>${drawdown.worst.toFixed(2)}%</strong></div><div><span>BEST OBSERVED</span><strong>${drawdown.best.toFixed(2)}%</strong></div></div><p class="result-caption">Drawdown is calculated from each path’s running equity peak. These paths resample the selected series and cannot represent market conditions absent from that history.</p></section>`;
@@ -513,7 +537,7 @@ function renderPolicyHeatmap(initialMetric) {
     return cell ? `<td><button class="heat-cell" type="button" data-action="apply-heatmap" data-short-window="${shortWindow}" data-long-window="${longWindow}" title="${escapeHTML(cell.tooltip)}" aria-label="${escapeHTML(cell.tooltip)}" style="--heat:${(0.12 + cell.quality * 0.4).toFixed(2)}">${cell.value.toFixed(2)}${metric === 'sharpeRatio' ? '' : '%'}</button></td>` : '<td><span class="heat-cell heat-cell-unavailable" aria-label="Invalid parameter combination">--</span></td>';
   }).join('')}</tr>`).join('');
   return `<section class="panel page-panel heatmap-panel"><div class="panel-heading"><div><p class="section-kicker">CALCULATED PARAMETER SWEEP / ${results.length} COMBINATIONS</p><h2>Policy heatmap</h2></div><label class="field-label heatmap-metric-label" for="heatmap-metric">Color by<select id="heatmap-metric">${metricOptions.map(([key, label]) => `<option value="${key}" ${metric === key ? 'selected' : ''}>${label}</option>`).join('')}</select></label></div>
-    <p class="panel-subtitle">Each cell uses the current series and saved execution costs, with at least 30 observations after its warm-up. Select a valid cell to apply its moving-average pair.</p>
+    <p class="panel-subtitle">Each cell uses the current workspace series and saved execution costs. Select a valid cell to apply its moving-average pair.</p>
     ${results.length ? `<div class="heatmap-scroll"><table class="heatmap-table"><thead><tr><th scope="col">SHORT / LONG</th>${columns.map((value) => `<th scope="col">${value}</th>`).join('')}</tr></thead><tbody>${gridRows}</tbody></table></div><p class="heatmap-axis-label">LONG MOVING AVERAGE / SESSIONS</p><p class="table-note">Rows are short-window sessions. Cells need at least 30 post-warm-up observations. This series has ${currentSeries.values.length} prices; the full 16-cell sweep needs at least 80. Hover or focus a valid cell for calculated return, drawdown, and volatility.</p>` : `<p class="empty-state">No eligible combinations: this series has ${currentSeries.values.length} prices. The shortest candidate needs at least 45 prices; the full 16-cell sweep needs at least 80 (30 post-warm-up observations per cell).</p>`}
     </section>`;
 }
@@ -628,7 +652,7 @@ async function loadHistoricalMarketData() {
 function renderStrategiesPage() {
   return `${renderPageIntro('MODEL CONFIGURATION', 'Strategy attributes', 'Inspect the selected policy and adjust supported parameters for local simulation.')}
     <section class="panel page-panel strategy-attributes-panel"><div class="panel-heading"><div><p class="section-kicker">ACTIVE POLICY</p><h2 id="strategy-page-title">${escapeHTML(getStrategyName(strategyConfig.type))}</h2></div><span id="strategy-page-status" class="diagnostic-status status-${currentDiagnostics.status.toLowerCase()}">${currentDiagnostics.status}</span></div>
-      <div class="strategy-detail-grid"><div class="strategy-description"><p class="attribute-label">STRATEGY TYPE</p><strong id="strategy-type-name">${escapeHTML(getStrategyName(strategyConfig.type))}</strong><p id="strategy-entry-description">${escapeHTML(strategyDescription(strategyConfig.type).entry)}</p><p id="strategy-exit-description">${escapeHTML(strategyDescription(strategyConfig.type).exit)}</p><div class="assumptions-block"><span class="attribute-label">ASSUMPTIONS & LIMITATIONS</span><p>Signals use closing prices and take effect on the following session. The model excludes fees, slippage, liquidity constraints, and short positions.</p></div></div>
+      <div class="strategy-detail-grid"><div class="strategy-description"><p class="attribute-label">STRATEGY TYPE</p><strong id="strategy-type-name">${escapeHTML(getStrategyName(strategyConfig.type))}</strong><p id="strategy-entry-description">${escapeHTML(strategyDescription(strategyConfig.type).entry)}</p><p id="strategy-exit-description">${escapeHTML(strategyDescription(strategyConfig.type).exit)}</p><div class="assumptions-block"><span class="attribute-label">ASSUMPTIONS & LIMITATIONS</span><p>Signals use closing prices and take effect on the following session. Backtests apply the configured commission and slippage assumptions; liquidity constraints and short positions are not modeled.</p></div></div>
         <form class="parameter-form" id="strategy-parameter-form" novalidate><label class="field-label" for="strategy-type">Strategy type<select id="strategy-type" data-policy-param><option value="moving-average" ${strategyConfig.type === 'moving-average' ? 'selected' : ''}>Moving-average crossover</option><option value="mean-reversion" ${strategyConfig.type === 'mean-reversion' ? 'selected' : ''}>Moving-average mean reversion</option><option value="volatility-filter" ${strategyConfig.type === 'volatility-filter' ? 'selected' : ''}>Volatility-filtered trend</option></select></label>
           <div class="parameter-fields"><label class="field-label" for="short-window">Short MA<input id="short-window" data-policy-param type="number" min="2" max="30" step="1" value="${escapeHTML(strategyConfig.shortWindow)}" /></label><label class="field-label" for="long-window">Long MA<input id="long-window" data-policy-param type="number" min="5" max="120" step="1" value="${escapeHTML(strategyConfig.longWindow)}" /></label><label class="field-label" for="strategy-lookback">Lookback<input id="strategy-lookback" data-policy-param type="number" min="5" max="252" step="1" value="${escapeHTML(strategyConfig.lookback)}" /></label><label class="field-label" for="volatility-sensitivity">Volatility sensitivity<input id="volatility-sensitivity" data-policy-param type="number" min="0.5" max="3" step="0.1" value="${escapeHTML(strategyConfig.volatilitySensitivity)}" /></label></div>
           <p class="form-error" id="strategy-config-error" aria-live="polite"></p><button class="primary-button" type="submit"><span data-icon="SlidersHorizontal"></span> Apply parameters</button>
@@ -642,7 +666,7 @@ function renderStrategiesPage() {
 function renderBacktestingPage() {
   return `${renderPageIntro('HISTORICAL SIMULATION', 'Backtest & policy review', 'Run the selected strategy on reproducible synthetic prices or real historical daily closes.')}
     <section class="panel page-panel"><div class="panel-heading"><div><p class="section-kicker">RUN PARAMETERS</p><h2>Backtest setup</h2></div><span class="sim-tag">SYNTHETIC / HISTORICAL</span></div>
-      <div class="form-grid"><label class="field-label" for="backtest-data-source">Data source<select id="backtest-data-source"><option value="synthetic">Synthetic price history</option><option value="historical">Historical daily closes</option></select></label><label class="field-label" for="backtest-symbol">Historical symbol<select id="backtest-symbol" data-historical-symbol>${historicalSymbolOptions()}</select></label><label class="field-label" for="backtest-adjustment">Historical price basis<select id="backtest-adjustment" data-historical-adjustment><option value="raw" ${selectedHistoricalAdjustment === 'raw' ? 'selected' : ''}>Raw close</option><option value="adjusted" ${selectedHistoricalAdjustment === 'adjusted' ? 'selected' : ''}>Adjusted close</option></select></label><label class="field-label" for="backtest-period">Synthetic period<select id="backtest-period">${periodOptions(currentPeriod)}</select></label><label class="field-label" for="backtest-seed">Synthetic seed<input id="backtest-seed" type="number" min="0" step="1" value="${simulationSeed}" /></label><div class="field-action"><button class="primary-button" type="button" data-action="run-backtest"><span data-icon="Activity"></span> Run backtest</button></div></div>
+      <div class="form-grid"><label class="field-label" for="backtest-data-source">Data source<select id="backtest-data-source"><option value="synthetic">Synthetic price history</option><option value="historical">Historical daily closes</option></select></label><label class="field-label" for="backtest-symbol" data-backtest-mode="historical">Historical symbol<select id="backtest-symbol" data-historical-symbol>${historicalSymbolOptions()}</select></label><label class="field-label" for="backtest-adjustment" data-backtest-mode="historical">Historical price basis<select id="backtest-adjustment" data-historical-adjustment><option value="raw" ${selectedHistoricalAdjustment === 'raw' ? 'selected' : ''}>Raw close</option><option value="adjusted" ${selectedHistoricalAdjustment === 'adjusted' ? 'selected' : ''}>Adjusted close</option></select></label><label class="field-label" for="backtest-period" data-backtest-mode="synthetic">Synthetic period<select id="backtest-period">${periodOptions(currentPeriod)}</select></label><label class="field-label" for="backtest-seed" data-backtest-mode="synthetic">Synthetic seed<input id="backtest-seed" type="number" min="0" step="1" value="${simulationSeed}" /></label><div class="field-action"><button class="primary-button" type="button" data-action="run-backtest"><span data-icon="Activity"></span> Run backtest</button></div></div>
       <div class="execution-cost-grid"><label class="field-label" for="commission-bps">Commission (bps / turnover)<input id="commission-bps" type="number" min="0" max="100" step="0.1" value="${executionCosts.commissionBps}" /></label><label class="field-label" for="slippage-bps">Slippage (bps / turnover)<input id="slippage-bps" type="number" min="0" max="100" step="0.1" value="${executionCosts.slippageBps}" /></label></div>
       <p class="table-note">Historical mode fetches daily observations for the selected allowlisted US equity or ETF from the existing server proxy. Execution costs are illustrative basis-point assumptions charged on next-session turnover; they are not broker quotes. Period and seed apply only to synthetic mode.</p>
       <p class="panel-subtitle active-strategy-label">Active strategy: <strong>${escapeHTML(getStrategyName(strategyConfig.type))}</strong> / MA ${strategyConfig.shortWindow} - ${strategyConfig.longWindow}</p><p class="form-error" id="backtest-run-error" aria-live="polite"></p>
@@ -683,7 +707,7 @@ function renderWalkForwardPanel() {
 function renderMonteCarloPage() {
   return `${renderPageIntro('SCENARIO ANALYSIS', 'Monte Carlo & policy heatmap', 'Explore deterministic scenario samples and compare calculated strategy parameter combinations.')}
     <section class="panel page-panel"><div class="panel-heading"><div><p class="section-kicker">PORTFOLIO OUTCOME MODEL</p><h2>Monte Carlo simulation</h2></div><span class="sim-tag">SIMULATED</span></div>
-      <div class="form-grid"><label class="field-label" for="scenario-count">Number of scenarios<input id="scenario-count" type="number" min="100" max="10000" step="100" value="1000" /></label><label class="field-label" for="scenario-horizon">Horizon<select id="scenario-horizon"><option value="1">1 year</option><option value="3">3 years</option><option value="5">5 years</option></select></label><div class="field-action"><button class="primary-button" type="button" data-action="run-monte-carlo"><span data-icon="Database"></span> Run scenarios</button></div></div>
+      <div class="form-grid"><label class="field-label" for="scenario-period">Synthetic source period<select id="scenario-period">${periodOptions(currentPeriod)}</select></label><label class="field-label" for="scenario-count">Number of scenarios<input id="scenario-count" type="number" min="100" max="10000" step="100" value="1000" /></label><label class="field-label" for="scenario-horizon">Horizon<select id="scenario-horizon"><option value="1">1 year</option><option value="3">3 years</option><option value="5">5 years</option></select></label><div class="field-action"><button class="secondary-button" type="button" data-action="apply-scenario-period">Apply source period</button><button class="primary-button" type="button" data-action="run-monte-carlo"><span data-icon="Database"></span> Run scenarios</button></div></div>
       <p class="form-error" id="monte-carlo-error" aria-live="polite"></p><div class="result-block" id="monte-carlo-results"><p class="empty-state">Uses the current workspace price history with a circular block bootstrap. At least 61 valid prices (60 returns) are required; select a longer workspace period or load historical data.</p></div>
     </section>
     ${renderPolicyHeatmap('sharpeRatio')}
@@ -1252,6 +1276,7 @@ secondaryView.addEventListener('click', (event) => {
   }
   if (action === 'save-guardrails') saveGuardrailInputs();
   if (action === 'apply-heatmap') selectHeatmapParameters(actionButton);
+  if (action === 'apply-scenario-period') applyScenarioPeriod();
   if (action === 'replay-prev') replayController?.previous();
   if (action === 'replay-next') replayController?.next();
   if (action === 'replay-reset') replayController?.restart();
@@ -1296,6 +1321,7 @@ secondaryView.addEventListener('input', (event) => {
 });
 
 secondaryView.addEventListener('change', (event) => {
+  if (event.target.id === 'backtest-data-source') syncBacktestSourceControls();
   if (event.target.dataset.historicalAdjustment !== undefined) {
     selectedHistoricalAdjustment = event.target.value;
     historicalMarketData = null;
