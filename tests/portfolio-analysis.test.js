@@ -16,7 +16,6 @@ test('portfolio analysis aligns dates and identifies perfectly opposing return s
     executionCosts: { commissionBps: 0, slippageBps: 0 },
   });
   assert.equal(result.valid, true, JSON.stringify(result.errors));
-  console.log('PORTFOLIO DEBUG', JSON.stringify({ correlations: result.correlations, returns: result.assetReturns }));
   assert.deepEqual(result.symbols, ['AAA', 'BBB']);
   assert.equal(result.observations, 4);
   assert.ok(Math.abs(result.correlations[0].values[1] + 1) < 1e-8);
@@ -77,6 +76,5 @@ test('constant-return series reports undefined correlation rather than a false z
     BBB: makeSeries('BBB', [100, 100, 100, 100, 100]),
   });
   assert.equal(result.valid, true, JSON.stringify(result.errors));
-  console.log('CONSTANT DEBUG', JSON.stringify({ correlations: result.correlations, returns: result.assetReturns }));
   assert.equal(result.correlations[0].values[1], null);
 });
