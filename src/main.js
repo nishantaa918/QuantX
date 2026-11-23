@@ -137,7 +137,7 @@ function hydrateExperiment(stored) {
   const guardrails = evaluateRiskGuardrails(backtest, thresholds);
   const diagnostics = evaluatePolicyDiagnostics(series, strategy, backtest, guardrails);
   const monteCarlo = stored.monteCarlo?.valid
-    ? runMonteCarlo(stored.monteCarlo.scenarioCount, stored.monteCarlo.years, stored.monteCarlo.seed)
+    ? runMonteCarlo(stored.monteCarlo.scenarioCount, stored.monteCarlo.years, stored.monteCarlo.sourceSeries ?? series, stored.monteCarlo.seed)
     : null;
   return {
     id: String(stored.id ?? `exp-${seed}-${stored.timestamp ?? Date.now()}`),
