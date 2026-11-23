@@ -547,3 +547,7 @@ table { width: 100%; border-collapse: collapse; text-align: left; }
   .historical-symbol-label { flex: 1; min-width: 100px; }
   .historical-status-line .secondary-button { flex: 1; }
 }
+
+.benchmark-diagnostics { margin-top: 15px; padding: 14px; border: 1px solid var(--border); background: rgba(7, 12, 17, .24); }
+.benchmark-diagnostics > .section-kicker { margin-bottom: 12px; }
+.benchmark-diagnostics .experiment-metric-grid { margin-bottom: 0; }

@@ -77,6 +77,8 @@ export function detectMarketRegimes(series, {
 export function analyzeStrategyBacktest(series, backtest) {
   if (!isPriceSeries(series) || !backtest?.valid || !Array.isArray(backtest.equityCurve)
     || !Array.isArray(backtest.dailyReturns) || !Array.isArray(backtest.exposures)
+    || !backtest.dailyReturns.every(Number.isFinite)
+    || !backtest.equityCurve.every((value) => Number.isFinite(value) && value > 0)
     || backtest.equityCurve.length !== series.values.length
     || backtest.dailyReturns.length !== series.values.length
     || backtest.exposures.length !== series.values.length) {
@@ -99,6 +101,37 @@ export function analyzeStrategyBacktest(series, backtest) {
   const worstSession = sessions.reduce((worst, item) => item.returnPct < worst.returnPct ? item : worst, sessions[0]);
   const strategyReturn = (backtest.equityCurve.at(-1) / backtest.equityCurve[0] - 1) * 100;
   const buyAndHoldReturn = (series.values.at(-1) / series.values[0] - 1) * 100;
+  const strategyReturns = backtest.dailyReturns.slice(1);
+  const benchmarkReturns = series.values.slice(1).map((price, index) => price / series.values[index] - 1);
+  const activeReturns = strategyReturns.map((value, index) => value - benchmarkReturns[index]);
+  const strategyMean = mean(strategyReturns);
+  const benchmarkMean = mean(benchmarkReturns);
+  const activeMean = mean(activeReturns);
+  const benchmarkVariance = benchmarkReturns.reduce((sum, value) => sum + (value - benchmarkMean) ** 2, 0) / Math.max(1, benchmarkReturns.length - 1);
+  const strategyVariance = strategyReturns.reduce((sum, value) => sum + (value - strategyMean) ** 2, 0) / Math.max(1, strategyReturns.length - 1);
+  const activeVariance = activeReturns.reduce((sum, value) => sum + (value - activeMean) ** 2, 0) / Math.max(1, activeReturns.length - 1);
+  const covariance = strategyReturns.reduce((sum, value, index) => sum + (value - strategyMean) * (benchmarkReturns[index] - benchmarkMean), 0) / Math.max(1, strategyReturns.length - 1);
+  const benchmarkStandardDeviation = Math.sqrt(benchmarkVariance);
+  const strategyStandardDeviation = Math.sqrt(strategyVariance);
+  const trackingError = Math.sqrt(activeVariance) * Math.sqrt(252) * 100;
+  const beta = benchmarkVariance > 1e-16 ? covariance / benchmarkVariance : null;
+  const correlation = benchmarkStandardDeviation > 1e-12 && strategyStandardDeviation > 1e-12
+    ? covariance / (benchmarkStandardDeviation * strategyStandardDeviation)
+    : null;
+  const alphaDaily = beta === null ? null : strategyMean - beta * benchmarkMean;
+  const benchmarkDiagnostics = {
+    valid: benchmarkVariance > 1e-16 && strategyReturns.length >= 2,
+    benchmark: 'Buy and hold of the selected price series',
+    observations: strategyReturns.length,
+    riskFreeRateAnnualPct: 0,
+    beta,
+    correlation,
+    annualizedAlphaPct: alphaDaily === null ? null : alphaDaily * 252 * 100,
+    trackingErrorPct: trackingError,
+    informationRatio: trackingError > 1e-12 ? activeMean * 252 / (trackingError / 100) : null,
+    activeReturnPct: strategyReturn - buyAndHoldReturn,
+    meanDailyActiveReturnPct: activeMean * 100,
+  };
   const grossPositiveContribution = sessions.filter((item) => item.contributionPct > 0).reduce((sum, item) => sum + item.contributionPct, 0);
   const grossNegativeContribution = sessions.filter((item) => item.contributionPct < 0).reduce((sum, item) => sum + item.contributionPct, 0);
 
@@ -107,6 +140,7 @@ export function analyzeStrategyBacktest(series, backtest) {
     strategyReturn,
     buyAndHoldReturn,
     relativeReturn: strategyReturn - buyAndHoldReturn,
+    benchmarkDiagnostics,
     activeSessions,
     totalSessions: sessions.length,
     timeInvestedPct: activeSessions / sessions.length * 100,
@@ -122,6 +156,7 @@ export function analyzeStrategyBacktest(series, backtest) {
     caveats: [
       'Exposure is shifted one session to match next-session execution in the backtest engine.',
       'Return attribution is arithmetic daily contribution, not a compounded decomposition.',
+      'Beta and alpha use daily arithmetic returns, a zero risk-free-rate assumption, and an in-sample linear regression; they are descriptive estimates, not forecasts.',
       'Fees, slippage, liquidity, dividends, and corporate actions are not included unless represented in the input data and engine.',
     ],
   };
