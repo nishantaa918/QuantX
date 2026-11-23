@@ -1,4 +1,4 @@
-import { normalizeAlphaVantageDaily } from '../src/market-data.js';
+import { normalizeAlphaVantageDaily, SUPPORTED_HISTORICAL_SYMBOLS } from '../src/market-data.js';
 
 const ROUTE = '/api/market-data/daily';
 const CACHE_TTL_MS = 15 * 60 * 1000;
@@ -22,19 +22,20 @@ export function createAlphaVantageMiddleware({
     const requestUrl = new URL(request.url, 'http://localhost');
     if (requestUrl.pathname !== ROUTE) return next();
     if (request.method !== 'GET') return sendJson(response, 405, { status: 'error', message: 'Use GET for historical data.' });
-    if ((requestUrl.searchParams.get('symbol') ?? '').toUpperCase() !== 'AAPL') {
-      return sendJson(response, 400, { status: 'error', message: 'This endpoint currently supports AAPL only.' });
+    const symbol = (requestUrl.searchParams.get('symbol') ?? 'AAPL').trim().toUpperCase();
+    if (!SUPPORTED_HISTORICAL_SYMBOLS.includes(symbol)) {
+      return sendJson(response, 400, { status: 'error', message: `Unsupported symbol. Supported symbols: ${SUPPORTED_HISTORICAL_SYMBOLS.join(', ')}.` });
     }
     if (!apiKey) {
       return sendJson(response, 503, { status: 'unavailable', message: 'Historical data is unavailable: the server-side Alpha Vantage key is not configured.' });
     }
 
-    const cached = cache.get('AAPL');
+    const cached = cache.get(symbol);
     if (cached && cached.expiresAt > now()) return sendJson(response, 200, cached.payload);
 
     try {
       const providerUrl = new URL('https://www.alphavantage.co/query');
-      providerUrl.search = new URLSearchParams({ function: 'TIME_SERIES_DAILY', symbol: 'AAPL', outputsize: 'compact', apikey: apiKey }).toString();
+      providerUrl.search = new URLSearchParams({ function: 'TIME_SERIES_DAILY', symbol, outputsize: 'compact', apikey: apiKey }).toString();
       const upstream = await fetchImpl(providerUrl, { signal: AbortSignal.timeout(10_000) });
       if (!upstream.ok) return sendJson(response, 502, { status: 'error', message: `Alpha Vantage returned HTTP ${upstream.status}.` });
       const providerPayload = await upstream.json();
@@ -45,13 +46,13 @@ export function createAlphaVantageMiddleware({
         return sendJson(response, 502, { status: 'error', message: 'Alpha Vantage rejected the daily-data request.' });
       }
 
-      const normalized = normalizeAlphaVantageDaily(providerPayload, { symbol: 'AAPL', limit: 100 });
+      const normalized = normalizeAlphaVantageDaily(providerPayload, { symbol, limit: 100 });
       const payload = {
         status: 'historical',
         data: normalized,
         lastUpdated: new Date(now()).toISOString(),
       };
-      cache.set('AAPL', { payload, expiresAt: now() + cacheTtlMs });
+      cache.set(symbol, { payload, expiresAt: now() + cacheTtlMs });
       return sendJson(response, 200, payload);
     } catch (error) {
       const message = error?.name === 'TimeoutError'
@@ -60,7 +61,7 @@ export function createAlphaVantageMiddleware({
           ? 'Alpha Vantage returned an unreadable response.'
           : error?.message?.startsWith('Invalid') || error?.message?.startsWith('Inconsistent')
             ? error.message
-            : 'Could not retrieve AAPL daily historical data.';
+            : `Could not retrieve ${symbol} daily historical data.`;
       return sendJson(response, 502, { status: 'error', message });
     }
   };
