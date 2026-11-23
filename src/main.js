@@ -1,6 +1,7 @@
 import './style.css';
 import { createHistoricalPriceChart, createLiveSimulationChart, createPriceChart, createReplayChart, LIVE_SIMULATION_HISTORY_WINDOWS, updateLiveSimulationChart, updatePriceChart, updateReplayChart } from './chart.js';
 import { calculatePerformance, generateSeries, runMonteCarlo } from './data.js';
+import { toPriceSeries } from './market-data.js';
 import { hydrateIcons } from './icons.js';
 import {
   buildCoverage,
@@ -115,7 +116,10 @@ function hydrateExperiment(stored) {
     : stored.strategy && typeof stored.strategy === 'object'
       ? { ...DEFAULT_STRATEGY, ...stored.strategy }
       : { ...strategyConfig };
-  const series = generateSeries(period, seed);
+  const dataSource = stored.dataSource === 'historical' && Array.isArray(stored.series?.observations) ? 'historical' : 'synthetic';
+  const series = dataSource === 'historical'
+    ? toPriceSeries(stored.series.observations, { symbol: stored.symbol ?? stored.series.symbol ?? 'AAPL' })
+    : generateSeries(period, seed);
   const backtest = calculateStrategyBacktest(series, strategy);
   const thresholds = stored.guardrailThresholds && typeof stored.guardrailThresholds === 'object'
     ? { ...DEFAULT_GUARDRAILS, ...stored.guardrailThresholds }
@@ -133,6 +137,8 @@ function hydrateExperiment(stored) {
     period,
     timestamp: Number.isFinite(stored.timestamp) ? stored.timestamp : Date.now(),
     strategyName: String(stored.strategyName ?? (typeof stored.strategy === 'string' ? stored.strategy : getStrategyName(strategy.type))),
+    dataSource,
+    symbol: dataSource === 'historical' ? series.symbol : null,
     strategyConfig: strategy,
     guardrailThresholds: thresholds,
     series,
@@ -162,6 +168,9 @@ function persistExperiments() {
       strategyName: experiment.strategyName,
       strategyConfig: experiment.strategyConfig,
       guardrailThresholds: experiment.guardrailThresholds,
+      dataSource: experiment.dataSource,
+      symbol: experiment.symbol,
+      series: experiment.dataSource === 'historical' ? { symbol: experiment.symbol, observations: experiment.series.observations } : undefined,
       monteCarlo: experiment.monteCarlo,
     }));
     localStorage.setItem(STORAGE_KEY, JSON.stringify(saved));
@@ -178,7 +187,7 @@ function saveGuardrailPreferences() {
   try { localStorage.setItem(GUARDRAIL_STORAGE_KEY, JSON.stringify(guardrailThresholds)); } catch { showToast('Risk thresholds could not be saved in this browser.'); }
 }
 
-function createExperimentRecord({ name, kind, series, strategy = strategyConfig, seed = simulationSeed, monteCarlo = null }) {
+function createExperimentRecord({ name, kind, series, strategy = strategyConfig, seed = simulationSeed, monteCarlo = null, dataSource = 'synthetic', symbol = null }) {
   const backtest = calculateStrategyBacktest(series, strategy);
   const guardrails = evaluateRiskGuardrails(backtest, guardrailThresholds);
   const diagnostics = evaluatePolicyDiagnostics(series, strategy, backtest, guardrails);
@@ -187,9 +196,11 @@ function createExperimentRecord({ name, kind, series, strategy = strategyConfig,
     name,
     kind,
     seed,
-    period: series.period,
+    period: marketPeriodLengths[series.period] ? series.period : currentPeriod,
     timestamp: Date.now(),
     strategyName: getStrategyName(strategy.type),
+    dataSource,
+    symbol: dataSource === 'historical' ? symbol ?? series.symbol : null,
     strategyConfig: { ...strategy },
     guardrailThresholds: { ...guardrailThresholds },
     series,
@@ -244,7 +255,9 @@ function updateDashboard(series) {
   document.querySelector('#sharpe-ratio').textContent = stats ? stats.sharpeRatio.toFixed(2) : '\u2014';
   document.querySelector('#max-drawdown').textContent = stats ? `${stats.maxDrawdown.toFixed(2)}%` : '\u2014';
   document.querySelector('#win-rate').textContent = stats ? `${stats.winRate.toFixed(1)}%` : '\u2014';
-  document.querySelector('#chart-range-label').textContent = `${marketPeriodLengths[currentPeriod]} SESSIONS`;
+  document.querySelector('#chart-range-label').textContent = series.period === 'HISTORICAL'
+    ? `${series.values.length} HISTORICAL SESSIONS`
+    : `${marketPeriodLengths[currentPeriod]} SESSIONS`;
   updateOverviewSummaries();
 }
 
@@ -506,15 +519,15 @@ function renderMarketsPage() {
   return `${renderPageIntro('MARKET RESEARCH', 'Historical data & replay', 'Real historical observations and synthetic replay are presented separately.')}
     ${renderHistoricalMarketPanel()}
     <section class="panel replay-panel" aria-labelledby="replay-title">
-      <div class="panel-heading"><div><p class="section-kicker">${escapeHTML(currentPeriod)} / SYNTHETIC MARKET DATA</p><h2 id="replay-title">Session replay</h2></div><span class="sim-tag">SIMULATED</span></div>
+      <div class="panel-heading"><div><p class="section-kicker">${currentSeries.period === 'HISTORICAL' ? 'AAPL / HISTORICAL DATA' : `${escapeHTML(currentPeriod)} / SYNTHETIC MARKET DATA`}</p><h2 id="replay-title">Session replay</h2></div><span class="sim-tag">${currentSeries.period === 'HISTORICAL' ? 'HISTORICAL' : 'SIMULATED'}</span></div>
       <div class="replay-metrics"><div><span>SESSION</span><strong id="replay-session">--</strong></div><div><span>ASSET PRICE</span><strong id="replay-price">--</strong></div><div><span>MA (${strategyConfig.shortWindow}) / MA (${strategyConfig.longWindow})</span><strong id="replay-averages">--</strong></div><div><span>STRATEGY SIGNAL</span><strong id="replay-signal">--</strong></div><div><span>PORTFOLIO VALUE</span><strong id="replay-portfolio">--</strong></div></div>
       <div class="replay-chart-frame"><canvas id="replay-chart" role="img" aria-label="Portfolio value as the simulated market replay advances"></canvas></div>
       <p class="empty-state replay-unavailable" id="replay-unavailable" hidden></p>
       <div class="replay-controls"><button class="icon-button replay-control" type="button" data-action="replay-prev" aria-label="Previous session" title="Previous session"><span data-icon="StepBack"></span></button><button class="primary-button replay-play" id="replay-play" type="button" data-action="replay-play"><span data-icon="Play"></span> Play</button><button class="icon-button replay-control" type="button" data-action="replay-next" aria-label="Next session" title="Next session"><span data-icon="StepForward"></span></button><button class="secondary-button replay-reset" type="button" data-action="replay-reset">Restart</button><label class="replay-slider-label" for="replay-slider">TIMELINE</label><input id="replay-slider" type="range" min="0" max="${Math.max(0, currentSeries.values.length - 1)}" value="0" aria-label="Replay session" /><span id="replay-step-count" class="replay-step-count">1 / ${currentSeries.values.length}</span></div>
-      <p class="table-note">Replay uses the same deterministic price series and next-session strategy positions as the backtest. Portfolio values are simulated.</p>
+      <p class="table-note">${currentSeries.period === 'HISTORICAL' ? 'Replay uses the preserved AAPL daily closing observations and next-session strategy positions. Portfolio values are simulated.' : 'Replay uses the same deterministic synthetic price series and next-session strategy positions as the backtest. Portfolio values are simulated.'}</p>
     </section>
     ${renderCoverageMonitor(['Market scenarios', 'Volatility regimes'], 'Scenario coverage')}
-    <p class="disclaimer-line"><span class="status-pulse"></span>Market series and replay values are synthetic. No live market feed is connected.</p>`;
+    <p class="disclaimer-line"><span class="status-pulse"></span>${currentSeries.period === 'HISTORICAL' ? 'Historical AAPL observations are provider data; replayed portfolio values remain simulated.' : 'Market series and replay values are synthetic. No live market feed is connected.'}</p>`;
 }
 
 function renderHistoricalMarketPanel() {
@@ -605,14 +618,15 @@ function renderStrategiesPage() {
 }
 
 function renderBacktestingPage() {
-  return `${renderPageIntro('HISTORICAL SIMULATION', 'Backtest & policy review', 'Run the selected strategy against a reproducible synthetic price history.')}
-    <section class="panel page-panel"><div class="panel-heading"><div><p class="section-kicker">RUN PARAMETERS</p><h2>Simulation setup</h2></div><span class="sim-tag">SIMULATED DATA</span></div>
-      <div class="form-grid"><label class="field-label" for="backtest-period">Backtest period<select id="backtest-period">${periodOptions(currentPeriod)}</select></label><label class="field-label" for="backtest-seed">Deterministic seed<input id="backtest-seed" type="number" min="0" step="1" value="${simulationSeed}" /></label><div class="field-action"><button class="primary-button" type="button" data-action="run-backtest"><span data-icon="Activity"></span> Run backtest</button></div></div>
+  return `${renderPageIntro('HISTORICAL SIMULATION', 'Backtest & policy review', 'Run the selected strategy on reproducible synthetic prices or real historical daily closes.')}
+    <section class="panel page-panel"><div class="panel-heading"><div><p class="section-kicker">RUN PARAMETERS</p><h2>Backtest setup</h2></div><span class="sim-tag">SYNTHETIC / HISTORICAL</span></div>
+      <div class="form-grid"><label class="field-label" for="backtest-data-source">Data source<select id="backtest-data-source"><option value="synthetic">Synthetic price history</option><option value="historical">Historical AAPL daily closes</option></select></label><label class="field-label" for="backtest-period">Synthetic period<select id="backtest-period">${periodOptions(currentPeriod)}</select></label><label class="field-label" for="backtest-seed">Synthetic seed<input id="backtest-seed" type="number" min="0" step="1" value="${simulationSeed}" /></label><div class="field-action"><button class="primary-button" type="button" data-action="run-backtest"><span data-icon="Activity"></span> Run backtest</button></div></div>
+      <p class="table-note">Historical mode fetches AAPL daily observations from the existing server proxy and preserves the provider's actual trading dates. Period and seed apply only to synthetic mode.</p>
       <p class="panel-subtitle active-strategy-label">Active strategy: <strong>${escapeHTML(getStrategyName(strategyConfig.type))}</strong> / MA ${strategyConfig.shortWindow} - ${strategyConfig.longWindow}</p><p class="form-error" id="backtest-run-error" aria-live="polite"></p>
       <div class="result-block" id="backtest-results">${renderBacktestResults(latestBacktest)}</div>
     </section>
     <section class="panel page-panel guardrail-config-panel"><div class="panel-heading"><div><p class="section-kicker">SIMULATED RISK LIMITS</p><h2>Risk guardrails</h2></div><span id="backtest-risk-status" class="diagnostic-status status-${currentGuardrails.status.toLowerCase()}">${currentGuardrails.status}</span></div>
-      <p class="disclaimer-line">These limits evaluate synthetic backtests only. They do not protect real investments.</p>
+      <p class="disclaimer-line">These limits evaluate simulated strategy results. They are analytical checks, not safeguards for real investments.</p>
       <div class="threshold-grid">${thresholdField('risk-max-drawdown', 'maxDrawdown', 'Maximum drawdown', guardrailThresholds.maxDrawdown, 0.1, 100)}${thresholdField('risk-max-volatility', 'maxVolatility', 'Annualized volatility', guardrailThresholds.maxVolatility, 0.1, 300)}${thresholdField('risk-max-exposure', 'maxExposure', 'Maximum position exposure', guardrailThresholds.maxExposure, 0.1, 100)}${thresholdField('risk-loss-limit', 'lossLimit', 'Single-session loss limit', guardrailThresholds.lossLimit, 0.1, 100)}</div>
       <p class="form-error" id="guardrail-config-error" aria-live="polite"></p><button class="secondary-button" type="button" data-action="save-guardrails">Save thresholds</button><div id="backtest-guardrail-results" class="guardrail-results">${renderGuardrailChecks(currentGuardrails)}</div>
     </section>
@@ -634,13 +648,13 @@ function renderResearchPage() {
   const selected = experiments.find((experiment) => experiment.id === selectedExperimentId) ?? experiments[0] ?? null;
   selectedExperimentId = selected?.id ?? null;
   const experimentRows = experiments.length ? experiments.map((experiment) => `
-    <tr><td><span class="experiment-name"><span class="experiment-glyph" data-icon="ChartNoAxesCombined"></span>${escapeHTML(experiment.name)}</span></td><td>${escapeHTML(experiment.strategyName)}</td><td>${escapeHTML(experiment.kind.replace('-', ' '))}</td><td>${formatRelativeTime(experiment.timestamp)}</td><td><span class="status-tag status-${experiment.status.toLowerCase()}">${experiment.status}</span></td><td class="action-cell"><button class="row-action" type="button" data-open-experiment="${escapeHTML(experiment.id)}">Reopen</button><button class="row-action" type="button" data-delete-experiment="${escapeHTML(experiment.id)}">Delete</button></td></tr>`).join('')
+    <tr><td><span class="experiment-name"><span class="experiment-glyph" data-icon="ChartNoAxesCombined"></span>${escapeHTML(experiment.name)}</span></td><td>${escapeHTML(experiment.strategyName)}</td><td>${escapeHTML(experiment.kind.replace('-', ' '))}${experiment.dataSource === 'historical' ? ` / ${escapeHTML(experiment.symbol)} historical` : ''}</td><td>${formatRelativeTime(experiment.timestamp)}</td><td><span class="status-tag status-${experiment.status.toLowerCase()}">${experiment.status}</span></td><td class="action-cell"><button class="row-action" type="button" data-open-experiment="${escapeHTML(experiment.id)}">Reopen</button><button class="row-action" type="button" data-delete-experiment="${escapeHTML(experiment.id)}">Delete</button></td></tr>`).join('')
     : '<tr><td colspan="6" class="empty-table">No local runs yet. Run a backtest or Monte Carlo simulation to populate analysis and coverage.</td></tr>';
   const selectedHasTrades = selected?.backtest.valid && selected.backtest.exposures.some((exposure) => exposure > 0);
   const analysis = selected ? `<div class="experiment-analysis-controls"><label class="field-label" for="experiment-selection">Selected run<select id="experiment-selection">${experiments.map((experiment) => `<option value="${escapeHTML(experiment.id)}" ${experiment.id === selected.id ? 'selected' : ''}>${escapeHTML(experiment.name)}</option>`).join('')}</select></label><span class="status-tag status-${selected.status.toLowerCase()}">${selected.status}</span></div>${selectedHasTrades ? `<div class="experiment-metric-grid">${experimentMetric('Total return', selected.backtest.metrics.totalReturn, '%')}${experimentMetric('Sharpe ratio', selected.backtest.metrics.sharpeRatio, '')}${experimentMetric('Max drawdown', selected.backtest.metrics.maxDrawdown, '%')}${experimentMetric('Volatility', selected.backtest.metrics.annualizedVolatility, '%')}</div>` : '<p class="empty-state">No positions were generated; performance percentages are unavailable for this run.</p>'}<div class="analysis-grid research-review-grid">${renderDiagnosticsPanel(selected.diagnostics, 'Run diagnostics', selected.backtest)}${renderGuardrailPanel(selected.guardrails, 'Run guardrails')}</div>${selected.monteCarlo?.valid ? `<div class="monte-carlo-distribution"><p class="section-kicker">MONTE CARLO / ${selected.monteCarlo.scenarioCount.toLocaleString()} PATHS</p><p class="result-caption">Terminal-return median ${selected.monteCarlo.median.toFixed(2)}%; maximum-drawdown median ${selected.monteCarlo.maximumDrawdown.median.toFixed(2)}%, 95th percentile ${selected.monteCarlo.maximumDrawdown.ninetyFifthPercentile.toFixed(2)}%. Higher drawdown percentages are worse.</p></div>` : ''}` : '<p class="empty-state">Select a saved run to inspect its calculated diagnostics and guardrails.</p>';
   return `${renderPageIntro('LOCAL EXPERIMENTS', 'Research lab', 'Review reproducible runs, calculated diagnostics, simulated risk, and measured coverage.', '<button class="primary-button" type="button" data-action="new-experiment"><span data-icon="ChartNoAxesCombined"></span> Run experiment</button>')}
     <section class="panel page-panel"><div class="panel-heading"><div><p class="section-kicker">EXPERIMENT HISTORY / ${experiments.length}</p><h2>Saved local runs</h2></div><span class="sim-tag">LOCAL STORAGE</span></div>
-      <div class="table-scroll"><table class="workspace-table research-table"><thead><tr><th>EXPERIMENT</th><th>STRATEGY</th><th>RUN TYPE</th><th>RUN TIME</th><th>STATUS</th><th></th></tr></thead><tbody>${experimentRows}</tbody></table></div><p class="table-note">Metrics and status are recalculated from deterministic synthetic inputs. Clearing browser storage removes this log.</p>
+      <div class="table-scroll"><table class="workspace-table research-table"><thead><tr><th>EXPERIMENT</th><th>STRATEGY</th><th>RUN TYPE</th><th>RUN TIME</th><th>STATUS</th><th></th></tr></thead><tbody>${experimentRows}</tbody></table></div><p class="table-note">Synthetic runs are regenerated from their saved seed; historical runs retain their original dated observations in this browser. Clearing browser storage removes this log.</p>
     </section>
     <section class="panel page-panel experiment-analysis-panel"><div class="panel-heading"><div><p class="section-kicker">CALCULATED RESULTS</p><h2>Experiment analysis</h2></div></div>${analysis}</section>
     ${renderPolicyHeatmap('sharpeRatio')}
@@ -652,7 +666,7 @@ function renderSettingsPage() {
   return `${renderPageIntro('WORKSPACE PREFERENCES', 'Settings', 'Adjust the local research interface. No account or remote service is connected.')}
     <section class="panel page-panel settings-panel"><div class="panel-heading"><div><p class="section-kicker">DISPLAY</p><h2>Interface preferences</h2></div><span class="panel-index">03</span></div>
       <div class="setting-row"><div><h3>Higher contrast</h3><p>Increase separation between panels, labels, and borders.</p></div><button class="setting-switch ${raised ? 'is-on' : ''}" type="button" data-action="toggle-contrast" role="switch" aria-checked="${raised}" aria-label="Toggle higher contrast"><span></span></button></div>
-      <div class="setting-row"><div><h3>Simulation data</h3><p>All prices, returns, and experiment outputs are generated locally.</p></div><span class="setting-value">LOCAL ONLY</span></div>
+      <div class="setting-row"><div><h3>Simulation data</h3><p>Synthetic prices are generated locally; historical AAPL observations are requested from the configured market-data provider.</p></div><span class="setting-value">LOCAL ONLY</span></div>
       <div class="setting-row"><div><h3>Experiment storage</h3><p>Saved runs are held in this browser's local storage.</p></div><span class="setting-value">${experiments.length} SAVED</span></div>
     </section>`;
 }
@@ -683,7 +697,7 @@ function openExperiment(experimentId) {
   if (experiment.kind === 'backtest') latestBacktestSeries = experiment.series;
   currentPeriod = experiment.period;
   simulationSeed = experiment.seed;
-  currentSeries = generateSeries(currentPeriod, simulationSeed);
+  currentSeries = experiment.series;
   refreshPolicyState();
   updatePriceChart(performanceChart, currentSeries);
   updatePeriodButtons();
@@ -775,32 +789,65 @@ function updatePeriodButtons() {
   });
 }
 
-function runBacktest() {
+async function runBacktest() {
   const period = document.querySelector('#backtest-period').value;
   const seedValue = Number(document.querySelector('#backtest-seed').value);
+  const dataSource = document.querySelector('#backtest-data-source').value;
   const error = document.querySelector('#backtest-run-error');
   const validation = validateStrategyParameters(strategyConfig);
-  if (!marketPeriodLengths[period] || !Number.isInteger(seedValue) || seedValue < 0 || !validation.valid) {
-    error.textContent = !marketPeriodLengths[period]
-      ? 'Choose a supported backtest period.'
-      : !Number.isInteger(seedValue) || seedValue < 0
-        ? 'The deterministic seed must be a non-negative whole number.'
-        : validation.errors.join(' ');
+  if (!validation.valid || (dataSource === 'synthetic' && (!marketPeriodLengths[period] || !Number.isInteger(seedValue) || seedValue < 0))) {
+    error.textContent = !validation.valid
+      ? validation.errors.join(' ')
+      : !marketPeriodLengths[period]
+        ? 'Choose a supported synthetic backtest period.'
+        : 'The deterministic seed must be a non-negative whole number.';
     showToast('Backtest not run. Review the configuration.');
     return;
   }
 
   error.textContent = '';
-  currentPeriod = period;
-  simulationSeed = seedValue;
-  currentSeries = generateSeries(period, seedValue);
-  latestBacktestSeries = currentSeries;
+  let series;
+  if (dataSource === 'historical') {
+    try {
+      if (!historicalMarketData?.data?.observations?.length) {
+        const response = await fetch('/api/market-data/daily?symbol=AAPL', { headers: { Accept: 'application/json' } });
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload.message || `Historical request failed (${response.status}).`);
+        if (payload.status !== 'historical' || payload.data?.symbol !== 'AAPL' || !Array.isArray(payload.data.observations)) {
+          throw new Error('The server returned no valid AAPL daily observations.');
+        }
+        historicalMarketData = payload;
+      }
+      series = toPriceSeries(historicalMarketData.data.observations, { symbol: historicalMarketData.data.symbol });
+    } catch (requestError) {
+      error.textContent = requestError.message || 'Could not load historical AAPL data.';
+      showToast('Historical backtest not run. Check the market-data connection.');
+      return;
+    }
+  } else {
+    currentPeriod = period;
+    simulationSeed = seedValue;
+    series = generateSeries(period, seedValue);
+  }
+
+  currentSeries = series;
+  latestBacktestSeries = series;
   refreshPolicyState();
   updatePriceChart(performanceChart, currentSeries);
   updatePeriodButtons();
   updateDashboard(currentSeries);
   updateBacktestPanels();
-  const record = createExperimentRecord({ name: `${getStrategyName(strategyConfig.type)} / ${period}`, kind: 'backtest', series: currentSeries, seed: seedValue });
+  const experimentName = dataSource === 'historical'
+    ? `${getStrategyName(strategyConfig.type)} / AAPL historical`
+    : `${getStrategyName(strategyConfig.type)} / ${period}`;
+  const record = createExperimentRecord({
+    name: experimentName,
+    kind: 'backtest',
+    series: currentSeries,
+    seed: seedValue,
+    dataSource,
+    symbol: dataSource === 'historical' ? currentSeries.symbol : null,
+  });
   addExperiment(record);
   refreshCoveragePanels();
   showToast(record.status === 'FAIL' ? 'Backtest finished with a risk or policy failure.' : `Backtest calculated: ${record.status}.`);
