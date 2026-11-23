@@ -123,6 +123,13 @@ test('backtest and Monte Carlo experiments reload reproducibly and can be delete
   assert.match(app.getElement('#walk-forward-results').innerHTML, /OUT-OF-SAMPLE RETURN/);
   assert.ok(['PASS', 'WARNING', 'FAIL'].includes(vm.runInContext('experiments[0].status', app.context)));
 
+  app.nav[5].listeners.click();
+  const researchMarkup = app.getElement('#secondary-view').innerHTML;
+  assert.match(researchMarkup, /Market benchmark/);
+  assert.match(researchMarkup, /SPY \/ S&amp;P 500 ETF/);
+  assert.match(researchMarkup, /Load index comparison/);
+  assert.match(researchMarkup, /disabled/);
+
   app.nav[4].listeners.click();
   app.getElement('#scenario-count').value = '100';
   app.getElement('#scenario-horizon').value = '1';
