@@ -1269,7 +1269,7 @@ secondaryView.addEventListener('click', (event) => {
     }
     errorElement.textContent = '';
     document.querySelector('#monte-carlo-results').innerHTML = `${renderMonteCarloSummary(results, scenarioCount, years)}<p class="result-caption">Synthetic outcomes are not forecasts.</p>`;
-    const monteCarlo = { ...results, scenarioCount, years, seed, sourcePeriod: currentSeries.period ?? currentPeriod };
+    const monteCarlo = { ...results, scenarioCount, years, seed, sourcePeriod: currentSeries.period ?? currentPeriod, sourceSeries: { period: currentSeries.period ?? currentPeriod, values: [...currentSeries.values] } };
     addExperiment(createExperimentRecord({ name: `Monte Carlo / ${scenarioCount.toLocaleString()} scenarios`, kind: 'monte-carlo', series: currentSeries, seed, monteCarlo }));
     refreshCoveragePanels();
     showToast('Monte Carlo scenarios calculated and saved locally.');
