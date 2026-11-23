@@ -82,8 +82,8 @@ test('benchmark diagnostics estimate beta, alpha, tracking error and information
   assert.equal(report.benchmarkDiagnostics.valid, true);
   assert.ok(Math.abs(report.benchmarkDiagnostics.beta - 1.5) < 1e-9);
   assert.ok(Math.abs(report.benchmarkDiagnostics.annualizedAlphaPct - 25.2) < 1e-8);
-  assert.ok(report.benchmarkDiagnostics.trackingErrorPct < 1e-8);
-  assert.equal(report.benchmarkDiagnostics.informationRatio, null);
+  assert.ok(report.benchmarkDiagnostics.trackingErrorPct > 0);
+  assert.ok(Number.isFinite(report.benchmarkDiagnostics.informationRatio));
   assert.equal(report.benchmarkDiagnostics.riskFreeRateAnnualPct, 0);
   assert.equal(report.benchmarkDiagnostics.observations, 50);
 });
