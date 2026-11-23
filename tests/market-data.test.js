@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createAlphaVantageMiddleware } from '../server/alpha-vantage-proxy.js';
-import { normalizeAlphaVantageDaily, normalizeAlphaVantageRows } from '../src/market-data.js';
+import { normalizeAlphaVantageDaily, normalizeAlphaVantageRows, toPriceSeries } from '../src/market-data.js';
 
 const rows = [
   { date: '2025-01-03', open: '103', high: '105', low: '102', close: '104', volume: '300' },
@@ -104,4 +104,17 @@ test('middleware maps provider and request errors to safe statuses', async () =>
   assert.equal(JSON.stringify(failure.body).includes('secret'), false);
   assert.equal((await callMiddleware(invalid, { url: '/api/market-data/daily?symbol=MSFT' })).status, 400);
   assert.equal((await callMiddleware(invalid, { method: 'POST' })).status, 405);
+});
+
+
+test('historical observations become a dated close-price series without synthetic relabelling', () => {
+  const observations = normalizeAlphaVantageRows(rows);
+  const series = toPriceSeries(observations, { symbol: 'aapl' });
+  assert.equal(series.period, 'HISTORICAL');
+  assert.equal(series.symbol, 'AAPL');
+  assert.deepEqual(series.labels, ['2025-01-01', '2025-01-02', '2025-01-03']);
+  assert.deepEqual(series.values, [101, 103, 104]);
+  assert.equal(series.observations[0].source, 'alpha_vantage');
+  assert.throws(() => toPriceSeries(observations.slice(0, 1)), /at least two/);
+  assert.throws(() => toPriceSeries([...observations].reverse()), /ascending/);
 });
