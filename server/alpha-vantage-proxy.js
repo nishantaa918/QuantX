@@ -42,7 +42,7 @@ export function createAlphaVantageMiddleware({
     if (isQuote) {
       const cacheKey = `quote:${symbol}`;
       const cached = cache.get(cacheKey);
-      if (cached && cached.expiresAt > now()) return sendJson(response, 200, cached.payload);
+      if (requestUrl.searchParams.get('refresh') !== '1' && cached && cached.expiresAt > now()) return sendJson(response, 200, cached.payload);
       try {
         const providerUrl = new URL('https://www.alphavantage.co/query');
         providerUrl.search = new URLSearchParams({ function: 'GLOBAL_QUOTE', symbol, apikey: apiKey }).toString();
