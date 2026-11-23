@@ -16,6 +16,7 @@ import {
   getReplayReadiness,
   runParameterSweep,
   validateStrategyParameters,
+  validateExecutionCosts,
 } from './strategy-analysis.js';
 import { createReplayController } from './replay-controller.js';
 import { createSimulationController, createSyntheticSimulation } from './simulation-engine.js';
@@ -194,7 +195,7 @@ function saveGuardrailPreferences() {
 }
 
 function createExperimentRecord({ name, kind, series, strategy = strategyConfig, seed = simulationSeed, monteCarlo = null, dataSource = 'synthetic', symbol = null }) {
-  const backtest = calculateStrategyBacktest(series, strategy, 100_000, storedExecutionCosts);
+  const backtest = calculateStrategyBacktest(series, strategy, 100_000, executionCosts);
   const guardrails = evaluateRiskGuardrails(backtest, guardrailThresholds);
   const diagnostics = evaluatePolicyDiagnostics(series, strategy, backtest, guardrails);
   return {
@@ -464,7 +465,7 @@ function renderBacktestResults(backtest) {
   if (!backtest.valid || !backtest.metrics) return `<p class="empty-state">${escapeHTML(backtest.errors.join(' ')) || 'Run a valid backtest to calculate strategy performance.'}</p>`;
   if (!backtest.exposures.some((exposure) => exposure > 0)) return '<p class="empty-state">No positions were generated; performance percentages are unavailable for this run.</p>';
   const metrics = backtest.metrics;
-  return `<div class="result-summary"><div><span>TOTAL RETURN</span><strong class="${metrics.totalReturn >= 0 ? 'is-positive' : 'is-negative'}">${metrics.totalReturn >= 0 ? '+' : ''}${metrics.totalReturn.toFixed(2)}%</strong></div><div><span>SHARPE RATIO</span><strong>${metrics.sharpeRatio.toFixed(2)}</strong></div><div><span>MAX DRAWDOWN</span><strong>${metrics.maxDrawdown.toFixed(2)}%</strong></div><div><span>WIN RATE</span><strong>${metrics.winRate.toFixed(1)}%</strong></div></div><p class="result-caption">${backtest.signals.filter((signal) => signal === 'LONG').length} active sessions / ${backtest.signals.length} observations. Positions take effect one session after a signal.</p>`;
+  return `<div class="result-summary"><div><span>NET TOTAL RETURN</span><strong class="${metrics.totalReturn >= 0 ? 'is-positive' : 'is-negative'}">${metrics.totalReturn >= 0 ? '+' : ''}${metrics.totalReturn.toFixed(2)}%</strong></div><div><span>GROSS RETURN</span><strong>${backtest.grossMetrics.totalReturn.toFixed(2)}%</strong></div><div><span>SHARPE RATIO</span><strong>${metrics.sharpeRatio.toFixed(2)}</strong></div><div><span>MAX DRAWDOWN</span><strong>${metrics.maxDrawdown.toFixed(2)}%</strong></div></div><p class="result-caption">Estimated costs: ${backtest.totalTransactionCostsUSD.toFixed(2)} across ${backtest.tradeCount} position changes (${backtest.executionCosts.commissionBps} bps commission + ${backtest.executionCosts.slippageBps} bps slippage per unit turnover). ${backtest.totalTurnover.toFixed(2)}x cumulative turnover / ${backtest.signals.length} observations. Positions take effect one session after a signal.</p>`;
 }
 
 function experimentMetric(label, value, suffix) {
@@ -628,7 +629,8 @@ function renderBacktestingPage() {
   return `${renderPageIntro('HISTORICAL SIMULATION', 'Backtest & policy review', 'Run the selected strategy on reproducible synthetic prices or real historical daily closes.')}
     <section class="panel page-panel"><div class="panel-heading"><div><p class="section-kicker">RUN PARAMETERS</p><h2>Backtest setup</h2></div><span class="sim-tag">SYNTHETIC / HISTORICAL</span></div>
       <div class="form-grid"><label class="field-label" for="backtest-data-source">Data source<select id="backtest-data-source"><option value="synthetic">Synthetic price history</option><option value="historical">Historical AAPL daily closes</option></select></label><label class="field-label" for="backtest-period">Synthetic period<select id="backtest-period">${periodOptions(currentPeriod)}</select></label><label class="field-label" for="backtest-seed">Synthetic seed<input id="backtest-seed" type="number" min="0" step="1" value="${simulationSeed}" /></label><div class="field-action"><button class="primary-button" type="button" data-action="run-backtest"><span data-icon="Activity"></span> Run backtest</button></div></div>
-      <p class="table-note">Historical mode fetches AAPL daily observations from the existing server proxy and preserves the provider's actual trading dates. Period and seed apply only to synthetic mode.</p>
+      <div class="execution-cost-grid"><label class="field-label" for="commission-bps">Commission (bps / turnover)<input id="commission-bps" type="number" min="0" max="100" step="0.1" value="${executionCosts.commissionBps}" /></label><label class="field-label" for="slippage-bps">Slippage (bps / turnover)<input id="slippage-bps" type="number" min="0" max="100" step="0.1" value="${executionCosts.slippageBps}" /></label></div>
+      <p class="table-note">Historical mode fetches AAPL daily observations from the existing server proxy. Execution costs are illustrative basis-point assumptions charged on next-session turnover; they are not broker quotes. Period and seed apply only to synthetic mode.</p>
       <p class="panel-subtitle active-strategy-label">Active strategy: <strong>${escapeHTML(getStrategyName(strategyConfig.type))}</strong> / MA ${strategyConfig.shortWindow} - ${strategyConfig.longWindow}</p><p class="form-error" id="backtest-run-error" aria-live="polite"></p>
       <div class="result-block" id="backtest-results">${renderBacktestResults(latestBacktest)}</div>
     </section>
@@ -846,12 +848,15 @@ async function runBacktest() {
   const period = document.querySelector('#backtest-period').value;
   const seedValue = Number(document.querySelector('#backtest-seed').value);
   const dataSource = document.querySelector('#backtest-data-source').value;
+  const costValidation = validateExecutionCosts({ commissionBps: Number(document.querySelector('#commission-bps').value), slippageBps: Number(document.querySelector('#slippage-bps').value) });
   const error = document.querySelector('#backtest-run-error');
   const validation = validateStrategyParameters(strategyConfig);
-  if (!validation.valid || (dataSource === 'synthetic' && (!marketPeriodLengths[period] || !Number.isInteger(seedValue) || seedValue < 0))) {
+  if (!validation.valid || !costValidation.valid || (dataSource === 'synthetic' && (!marketPeriodLengths[period] || !Number.isInteger(seedValue) || seedValue < 0))) {
     error.textContent = !validation.valid
       ? validation.errors.join(' ')
-      : !marketPeriodLengths[period]
+      : !costValidation.valid
+        ? costValidation.errors.join(' ')
+        : !marketPeriodLengths[period]
         ? 'Choose a supported synthetic backtest period.'
         : 'The deterministic seed must be a non-negative whole number.';
     showToast('Backtest not run. Review the configuration.');
@@ -859,6 +864,8 @@ async function runBacktest() {
   }
 
   error.textContent = '';
+  executionCosts = costValidation.config;
+  try { localStorage.setItem(EXECUTION_COST_STORAGE_KEY, JSON.stringify(executionCosts)); } catch { /* keep the preference in memory */ }
   let series;
   if (dataSource === 'historical') {
     try {
