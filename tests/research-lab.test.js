@@ -102,6 +102,7 @@ test('backtest and Monte Carlo experiments reload reproducibly and can be delete
   app.getElement('#walk-forward-train').value = '60';
   app.getElement('#walk-forward-test').value = '20';
   app.getElement('#walk-forward-step').value = '20';
+  app.getElement('#walk-forward-objective').value = 'sharpeRatio';
   app.getElement('#backtest-period').value = '1Y';
   app.getElement('#backtest-seed').value = '0';
   app.getElement('#commission-bps').value = '1';
