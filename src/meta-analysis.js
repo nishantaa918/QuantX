@@ -207,6 +207,7 @@ export function metaAnalyze(effects, variances, options = {}) {
     iSquared,
     weights: pooled.weights,
     hkScale,
+    inferenceScale: varianceScale,
     predictionInterval,
     predictionIntervalDegreesOfFreedom: predictionInterval ? predictionDegreesOfFreedom : null,
     predictionIntervalNote: predictionInterval
