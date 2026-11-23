@@ -186,14 +186,28 @@ test('empty or invalid inputs do not produce numeric risk results', () => {
   assert.equal(invalidThresholds.checks.some((check) => check.key), false);
 });
 
-test('heatmap parameter results equal the underlying parameter-sweep backtests', () => {
+test('heatmap parameter results equal the underlying cost-aware parameter-sweep backtests', () => {
   const series = risingSeries();
   const parameters = { ...activeStrategy, lookback: 20 };
-  const sweep = runParameterSweep(series, parameters, [2], [6]);
-  const direct = calculateStrategyBacktest(series, { ...parameters, shortWindow: 2, longWindow: 6 });
+  const costs = { commissionBps: 2, slippageBps: 8 };
+  const sweep = runParameterSweep(series, parameters, [2], [6], costs);
+  const direct = calculateStrategyBacktest(series, { ...parameters, shortWindow: 2, longWindow: 6 }, 100_000, costs);
 
   assert.equal(sweep.length, 1);
   assert.deepEqual(sweep[0].metrics, direct.metrics);
+  assert.deepEqual(sweep[0].executionCosts, costs);
+  assert.equal(sweep[0].evaluationObservations, 74);
+});
+
+test('heatmap suppresses combinations without enough post-warm-up observations', () => {
+  const shortHistory = risingSeries(35);
+  const noEligibleCells = runParameterSweep(shortHistory, activeStrategy, [2], [6]);
+  const eligibleHistory = risingSeries(36);
+  const eligibleCell = runParameterSweep(eligibleHistory, activeStrategy, [2], [6]);
+
+  assert.equal(noEligibleCells.length, 0);
+  assert.equal(eligibleCell.length, 1);
+  assert.equal(eligibleCell[0].evaluationObservations, 30);
 });
 
 test('execution costs reduce net equity and are charged on next-session entries', () => {

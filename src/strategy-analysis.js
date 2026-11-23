@@ -355,14 +355,30 @@ export function evaluatePolicyState({ series, parameters = DEFAULT_STRATEGY, thr
   return { currentBacktest, latestBacktest, guardrails, diagnostics };
 }
 
-export function runParameterSweep(series, baseParameters = DEFAULT_STRATEGY, shortWindows = [3, 5, 8, 10], longWindows = [15, 20, 30, 50]) {
+export function runParameterSweep(
+  series,
+  baseParameters = DEFAULT_STRATEGY,
+  shortWindows = [3, 5, 8, 10],
+  longWindows = [15, 20, 30, 50],
+  executionCosts = DEFAULT_EXECUTION_COSTS,
+  minimumEvaluationObservations = 30,
+) {
   const combinations = [];
+  const values = series?.values;
+  if (!finiteSeries(values) || !Number.isInteger(minimumEvaluationObservations) || minimumEvaluationObservations < 1) return combinations;
   shortWindows.forEach((shortWindow) => longWindows.forEach((longWindow) => {
-    if (shortWindow >= longWindow) return;
+    if (shortWindow >= longWindow || values.length < longWindow + minimumEvaluationObservations) return;
     const parameters = { ...baseParameters, shortWindow, longWindow, lookback: Math.max(baseParameters.lookback, longWindow) };
-    const backtest = calculateStrategyBacktest(series, parameters);
+    const backtest = calculateStrategyBacktest(series, parameters, 100_000, executionCosts);
     if (!backtest.valid) return;
-    combinations.push({ parameters, metrics: backtest.metrics, maxDailyLoss: backtest.maxDailyLoss, maxExposure: backtest.maxExposure });
+    combinations.push({
+      parameters,
+      metrics: backtest.metrics,
+      maxDailyLoss: backtest.maxDailyLoss,
+      maxExposure: backtest.maxExposure,
+      evaluationObservations: values.length - longWindow,
+      executionCosts: backtest.executionCosts,
+    });
   }));
   return combinations;
 }

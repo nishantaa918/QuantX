@@ -132,7 +132,8 @@ test('backtest and Monte Carlo experiments reload reproducibly and can be delete
   const monteCarloMarkup = app.getElement('#monte-carlo-results').innerHTML;
   assert.match(monteCarloMarkup, /TERMINAL-RETURN DISTRIBUTION/);
   assert.match(monteCarloMarkup, /MAXIMUM DRAWDOWN DISTRIBUTION/);
-  assert.match(monteCarloMarkup, /Higher drawdown percentages represent worse losses/);
+  assert.match(monteCarloMarkup, /Drawdown is calculated from each path’s running equity peak/);
+  assert.match(monteCarloMarkup, /Circular block bootstrap/);
   storedRuns = JSON.parse(storage.get('quantx.midnight.experiments'));
   const savedMonteCarlo = storedRuns.find((run) => run.kind === 'monte-carlo');
   assert.ok(savedMonteCarlo);
@@ -142,7 +143,7 @@ test('backtest and Monte Carlo experiments reload reproducibly and can be delete
   const expectedBacktest = policy.calculateStrategyBacktest(generateSeries('1Y', 0), savedBacktest.strategyConfig, 100_000, savedBacktest.executionCosts);
   assert.deepEqual(JSON.parse(JSON.stringify(loadedBacktest.backtest.metrics)), JSON.parse(JSON.stringify(expectedBacktest.metrics)));
   const loadedMonteCarlo = vm.runInContext(`experiments.find((run) => run.id === ${JSON.stringify(savedMonteCarlo.id)})`, reloaded.context);
-  const expectedMonteCarlo = runMonteCarlo(savedMonteCarlo.monteCarlo.scenarioCount, savedMonteCarlo.monteCarlo.years, savedMonteCarlo.monteCarlo.seed);
+  const expectedMonteCarlo = runMonteCarlo(savedMonteCarlo.monteCarlo.scenarioCount, savedMonteCarlo.monteCarlo.years, savedMonteCarlo.monteCarlo.sourceSeries, savedMonteCarlo.monteCarlo.seed);
   assert.deepEqual(JSON.parse(JSON.stringify(loadedMonteCarlo.monteCarlo)), JSON.parse(JSON.stringify(expectedMonteCarlo)));
 
   reloaded.nav[5].listeners.click();
