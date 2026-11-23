@@ -176,8 +176,17 @@ export function monteCarloFdrValidation(options = {}) {
       fwer,
       power,
       meanDiscoveries: sample.discoveries.reduce((sum, value) => sum + value, 0) / config.replications,
-      fdrControlAssessment: controlAssessment(fdr, config.alpha),
-      fwerControlAssessment: controlAssessment(fwer, config.alpha),
+      fdrControlAssessment: method === 'bh' && config.dependence === 'negative_equicorrelation_boundary'
+        ? 'descriptive_only_bh_guarantee_not_established_for_this_dependence'
+        : controlAssessment(fdr, config.alpha),
+      fwerControlAssessment: method === 'bonferroni'
+        ? controlAssessment(fwer, config.alpha)
+        : 'descriptive_only_method_does_not_claim_fwer_control',
+      theoreticalGuarantee: method === 'by'
+        ? 'FDR control under arbitrary dependence'
+        : method === 'bh'
+          ? 'FDR control under independence or suitable positive regression dependence'
+          : 'FWER control under arbitrary dependence; therefore FDR is also bounded by alpha',
     };
   }
 
