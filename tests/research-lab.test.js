@@ -99,6 +99,8 @@ test('backtest and Monte Carlo experiments reload reproducibly and can be delete
   const app = await bootApplication(storage);
   app.nav[3].listeners.click();
   assert.match(app.getElement('#secondary-view').innerHTML, /Walk-forward testing/);
+  assert.match(app.getElement('#secondary-view').innerHTML, /Historical symbol/);
+  assert.match(app.getElement('#secondary-view').innerHTML, /MSFT/);
   app.getElement('#walk-forward-train').value = '60';
   app.getElement('#walk-forward-test').value = '20';
   app.getElement('#walk-forward-step').value = '20';
