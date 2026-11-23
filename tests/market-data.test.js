@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createAlphaVantageMiddleware } from '../server/alpha-vantage-proxy.js';
 import { normalizeAlphaVantageDaily, normalizeAlphaVantageRows, toPriceSeries } from '../src/market-data.js';
+import { calculateStrategyBacktest } from '../src/strategy-analysis.js';
 
 const rows = [
   { date: '2025-01-03', open: '103', high: '105', low: '102', close: '104', volume: '300' },
@@ -117,4 +118,28 @@ test('historical observations become a dated close-price series without syntheti
   assert.equal(series.observations[0].source, 'alpha_vantage');
   assert.throws(() => toPriceSeries(observations.slice(0, 1)), /at least two/);
   assert.throws(() => toPriceSeries([...observations].reverse()), /ascending/);
+});
+
+
+test('historical dated close series runs through the existing strategy backtest engine', () => {
+  const observations = Array.from({ length: 40 }, (_, index) => {
+    const date = new Date(Date.UTC(2025, 0, 1 + index)).toISOString().slice(0, 10);
+    const close = 100 + index * 0.4;
+    return { date, open: close, high: close + 1, low: close - 1, close, volume: 1_000_000, source: 'alpha_vantage' };
+  });
+  const series = toPriceSeries(observations, { symbol: 'AAPL' });
+  const backtest = calculateStrategyBacktest(series, {
+    type: 'moving-average',
+    shortWindow: 2,
+    longWindow: 6,
+    lookback: 10,
+    volatilitySensitivity: 1.5,
+  });
+
+  assert.equal(backtest.valid, true);
+  assert.equal(backtest.equityCurve.length, observations.length);
+  assert.equal(series.labels[0], observations[0].date);
+  assert.equal(series.labels.at(-1), observations.at(-1).date);
+  assert.ok(backtest.exposures.some((exposure) => exposure > 0));
+  assert.ok(Number.isFinite(backtest.metrics.totalReturn));
 });
