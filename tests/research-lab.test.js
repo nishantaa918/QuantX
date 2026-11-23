@@ -6,6 +6,7 @@ import { calculatePerformance, generateSeries, runMonteCarlo } from '../src/data
 import * as policy from '../src/strategy-analysis.js';
 import * as research from '../src/research-engine.js';
 import { createSimulationController, createSyntheticSimulation } from '../src/simulation-engine.js';
+import { runWalkForwardValidation } from '../src/walk-forward.js';
 
 class ElementStub {
   constructor(dataset = {}) {
@@ -71,6 +72,7 @@ async function bootApplication(storage) {
     runMonteCarlo,
     ...policy,
     ...research,
+    runWalkForwardValidation,
     createPriceChart: () => chart,
     createLiveSimulationChart: () => chart,
     createReplayChart: () => chart,
@@ -96,6 +98,10 @@ test('backtest and Monte Carlo experiments reload reproducibly and can be delete
   const storage = new Map();
   const app = await bootApplication(storage);
   app.nav[3].listeners.click();
+  assert.match(app.getElement('#secondary-view').innerHTML, /Walk-forward testing/);
+  app.getElement('#walk-forward-train').value = '60';
+  app.getElement('#walk-forward-test').value = '20';
+  app.getElement('#walk-forward-step').value = '20';
   app.getElement('#backtest-period').value = '1Y';
   app.getElement('#backtest-seed').value = '0';
   app.getElement('#commission-bps').value = '1';
@@ -107,6 +113,8 @@ test('backtest and Monte Carlo experiments reload reproducibly and can be delete
   assert.ok(savedBacktest);
   assert.equal(savedBacktest.seed, 0);
   assert.deepEqual(savedBacktest.executionCosts, { commissionBps: 1, slippageBps: 5 });
+  clickAction(app, 'run-walk-forward');
+  assert.match(app.getElement('#walk-forward-results').innerHTML, /OUT-OF-SAMPLE RETURN/);
   assert.ok(['PASS', 'WARNING', 'FAIL'].includes(vm.runInContext('experiments[0].status', app.context)));
 
   app.nav[4].listeners.click();
