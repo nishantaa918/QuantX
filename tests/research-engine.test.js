@@ -126,6 +126,7 @@ test('strategy autopsy aligns an external benchmark by exact shared trading date
   assert.equal(report.benchmarkDiagnostics.benchmark, 'SPY');
   assert.equal(report.benchmarkDiagnostics.observations, 7);
   assert.ok(Math.abs(report.benchmarkDiagnostics.beta - 1.2) < 1e-9);
+  assert.ok(report.benchmarkDiagnostics.correlation <= 1 && report.benchmarkDiagnostics.correlation >= -1);
   assert.ok(Math.abs(report.benchmarkDiagnostics.annualizedAlphaPct - 12.6) < 1e-8);
 });
 
