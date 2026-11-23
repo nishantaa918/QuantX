@@ -105,6 +105,43 @@ test('benchmark diagnostics handle a flat benchmark and reject non-finite backte
   assert.equal(analyzeStrategyBacktest(flat, { ...backtest, dailyReturns: [0, NaN, ...backtest.dailyReturns.slice(2)] }).valid, false);
 });
 
+
+test('strategy autopsy aligns an external benchmark by exact shared trading dates', () => {
+  const asset = datedSeries(Array.from({ length: 8 }, (_, index) => 100 * (1.01 ** index)));
+  const benchmark = {
+    period: 'HISTORICAL',
+    symbol: 'SPY',
+    labels: ['2025-01-01', '2025-01-02', '2025-01-03', '2025-01-04', '2025-01-05', '2025-01-06', '2025-01-07', '2025-01-08'],
+    values: [100, 101, 99, 102, 103, 100, 104, 105],
+  };
+  const strategyReturns = [0, ...Array.from({ length: 7 }, (_, index) => {
+    const benchmarkReturn = benchmark.values[index + 1] / benchmark.values[index] - 1;
+    return 0.0005 + 1.2 * benchmarkReturn;
+  })];
+  const equityCurve = [100_000];
+  for (const dailyReturn of strategyReturns.slice(1)) equityCurve.push(equityCurve.at(-1) * (1 + dailyReturn));
+  const backtest = { valid: true, equityCurve, dailyReturns: strategyReturns, exposures: asset.values.map(() => 1) };
+  const report = analyzeStrategyBacktest(asset, backtest, benchmark);
+  assert.equal(report.valid, true);
+  assert.equal(report.benchmarkDiagnostics.benchmark, 'SPY');
+  assert.equal(report.benchmarkDiagnostics.observations, 7);
+  assert.ok(Math.abs(report.benchmarkDiagnostics.beta - 1.2) < 1e-9);
+  assert.ok(Math.abs(report.benchmarkDiagnostics.annualizedAlphaPct - 12.6) < 1e-8);
+});
+
+test('external benchmark alignment skips sessions missing from either series and requires enough matched returns', () => {
+  const asset = { period: 'HISTORICAL', labels: ['d1', 'd2', 'd3', 'd4', 'd5'], values: [100, 101, 102, 103, 104] };
+  const benchmark = { period: 'HISTORICAL', symbol: 'SPY', labels: ['d1', 'd2', 'd4', 'd5'], values: [100, 100.5, 101, 101.5] };
+  const backtest = { valid: true, equityCurve: [100, 101, 102, 103, 104], dailyReturns: [0, .01, .01, .01, .01], exposures: [0, 1, 1, 1, 1] };
+  const report = analyzeStrategyBacktest(asset, backtest, benchmark);
+  assert.equal(report.valid, true);
+  assert.equal(report.benchmarkDiagnostics.observations, 2);
+  assert.equal(report.benchmarkDiagnostics.valid, true);
+  const oneMatch = { ...benchmark, labels: ['d1', 'd2'], values: [100, 101] };
+  const shortReport = analyzeStrategyBacktest(asset, backtest, oneMatch);
+  assert.equal(shortReport.benchmarkDiagnostics.valid, false);
+});
+
 test('strategy autopsy refuses misaligned or invalid backtests', () => {
   const series = trendingSeries(30);
   assert.equal(analyzeStrategyBacktest(series, null).valid, false);
