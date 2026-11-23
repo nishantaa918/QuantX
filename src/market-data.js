@@ -1,3 +1,5 @@
+export const SUPPORTED_HISTORICAL_SYMBOLS = Object.freeze(['AAPL', 'MSFT', 'NVDA', 'AMZN', 'GOOGL', 'META', 'TSLA', 'SPY', 'QQQ', 'DIA', 'IWM']);
+
 const SOURCE = 'alpha_vantage';
 const FREQUENCY = '1d';
 

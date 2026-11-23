@@ -4,6 +4,7 @@ import test from 'node:test';
 import vm from 'node:vm';
 import { calculatePerformance, generateSeries, runMonteCarlo } from '../src/data.js';
 import * as policy from '../src/strategy-analysis.js';
+import { SUPPORTED_HISTORICAL_SYMBOLS, toPriceSeries } from '../src/market-data.js';
 import * as research from '../src/research-engine.js';
 import { createSimulationController, createSyntheticSimulation } from '../src/simulation-engine.js';
 import { runWalkForwardValidation } from '../src/walk-forward.js';
@@ -72,6 +73,8 @@ async function bootApplication(storage) {
     runMonteCarlo,
     ...policy,
     ...research,
+    SUPPORTED_HISTORICAL_SYMBOLS,
+    toPriceSeries,
     runWalkForwardValidation,
     createPriceChart: () => chart,
     createLiveSimulationChart: () => chart,
@@ -99,6 +102,8 @@ test('backtest and Monte Carlo experiments reload reproducibly and can be delete
   const app = await bootApplication(storage);
   app.nav[3].listeners.click();
   assert.match(app.getElement('#secondary-view').innerHTML, /Walk-forward testing/);
+  assert.match(app.getElement('#secondary-view').innerHTML, /Historical symbol/);
+  assert.match(app.getElement('#secondary-view').innerHTML, /MSFT/);
   app.getElement('#walk-forward-train').value = '60';
   app.getElement('#walk-forward-test').value = '20';
   app.getElement('#walk-forward-step').value = '20';
