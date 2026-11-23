@@ -8,6 +8,7 @@ import { SUPPORTED_HISTORICAL_SYMBOLS, toPriceSeries } from '../src/market-data.
 import * as research from '../src/research-engine.js';
 import { createSimulationController, createSyntheticSimulation } from '../src/simulation-engine.js';
 import { runWalkForwardValidation } from '../src/walk-forward.js';
+import { calculateDiversificationPortfolio } from '../src/portfolio-analysis.js';
 
 class ElementStub {
   constructor(dataset = {}) {
@@ -76,6 +77,7 @@ async function bootApplication(storage) {
     SUPPORTED_HISTORICAL_SYMBOLS,
     toPriceSeries,
     runWalkForwardValidation,
+    calculateDiversificationPortfolio,
     createPriceChart: () => chart,
     createLiveSimulationChart: () => chart,
     createReplayChart: () => chart,
@@ -149,6 +151,7 @@ test('backtest and Monte Carlo experiments reload reproducibly and can be delete
   assert.match(researchMarkup, /MARKET REGIME DETECTOR/);
   assert.match(researchMarkup, /STRATEGY AUTOPSY/);
   assert.match(researchMarkup, /Momentum hypothesis test/);
+  assert.match(researchMarkup, /Portfolio diversification lab/);
   assert.match(researchMarkup, /hypothesis-block-length/);
   reloaded.getElement('#regime-window').value = '20';
   reloaded.getElement('#hypothesis-lookback').value = '5';
