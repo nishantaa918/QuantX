@@ -551,3 +551,16 @@ table { width: 100%; border-collapse: collapse; text-align: left; }
 .benchmark-diagnostics { margin-top: 15px; padding: 14px; border: 1px solid var(--border); background: rgba(7, 12, 17, .24); }
 .benchmark-diagnostics > .section-kicker { margin-bottom: 12px; }
 .benchmark-diagnostics .experiment-metric-grid { margin-bottom: 0; }
+
+.portfolio-lab-panel { margin-top: 16px; }
+.portfolio-lab-controls { display: grid; grid-template-columns: minmax(220px, 1fr) minmax(140px, .45fr) auto; align-items: end; gap: 12px; padding: 14px 0; border-top: 1px solid var(--border); }
+.portfolio-lab-controls input, .portfolio-lab-controls select { width: 100%; min-height: 39px; padding: 0 10px; border: 1px solid var(--border-strong); background: #0b1219; color: var(--text); font-size: 11px; }
+.portfolio-subheading { margin: 18px 0 8px; color: var(--text); font-size: 11px; font-weight: 600; }
+.portfolio-table, .portfolio-correlation { min-width: 560px; }
+.portfolio-correlation th, .portfolio-correlation td { text-align: center; }
+.portfolio-correlation th:first-child { text-align: left; }
+@media (max-width: 680px) {
+  .portfolio-lab-panel { padding: 16px 13px; }
+  .portfolio-lab-controls { grid-template-columns: minmax(0, 1fr); gap: 10px; }
+  .portfolio-lab-controls .field-action .primary-button { width: 100%; }
+}
