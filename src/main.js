@@ -669,14 +669,15 @@ function renderResearchIntelligencePanel(experiment, options = {}) {
   const regimeWindow = Number.isInteger(options.regimeWindow) ? options.regimeWindow : 20;
   const lookback = Number.isInteger(options.lookback) ? options.lookback : 5;
   const permutations = Number.isInteger(options.permutations) ? options.permutations : 999;
+  const blockLength = Number.isInteger(options.blockLength) ? options.blockLength : 5;
   const regimes = detectMarketRegimes(experiment.series, { window: regimeWindow });
   const autopsy = analyzeStrategyBacktest(experiment.series, experiment.backtest);
-  const hypothesis = testMomentumHypothesis(experiment.series, { lookback, permutations, seed: 2026 });
+  const hypothesis = testMomentumHypothesis(experiment.series, { lookback, permutations, seed: 2026, blockLength });
   const latest = regimes.latest;
   const recent = regimes.valid ? regimes.regimes.filter((item) => item.ready).slice(-10).reverse() : [];
   const regimeRows = recent.map((item) => `<tr><td>${escapeHTML(item.date)}</td><td>${escapeHTML(item.direction)}</td><td>${escapeHTML(item.volatilityLevel)}</td><td class="mono-cell">${item.windowReturn.toFixed(2)}%</td><td class="mono-cell">${item.volatility.toFixed(2)}%</td></tr>`).join('');
   const hypothesisMarkup = hypothesis.valid
-    ? `<div class="result-summary"><div><span>POSITIVE MOMENTUM N</span><strong>${hypothesis.positiveCount}</strong></div><div><span>NON-POSITIVE N</span><strong>${hypothesis.nonPositiveCount}</strong></div><div><span>MEAN RETURN DIFFERENCE</span><strong class="${hypothesis.differencePct >= 0 ? 'is-positive' : 'is-negative'}">${hypothesis.differencePct >= 0 ? '+' : ''}${hypothesis.differencePct.toFixed(4)}%</strong></div><div><span>PERMUTATION P-VALUE</span><strong>${hypothesis.pValue.toFixed(4)}</strong></div></div><p class="result-caption">Positive-momentum mean: ${hypothesis.positiveGroupMeanPct.toFixed(4)}%; non-positive mean: ${hypothesis.nonPositiveGroupMeanPct.toFixed(4)}%. Two-sided test with ${hypothesis.permutations.toLocaleString()} shuffles.</p>`
+    ? `<div class="result-summary"><div><span>POSITIVE MOMENTUM N</span><strong>${hypothesis.positiveCount}</strong></div><div><span>NON-POSITIVE N</span><strong>${hypothesis.nonPositiveCount}</strong></div><div><span>MEAN RETURN DIFFERENCE</span><strong class="${hypothesis.differencePct >= 0 ? 'is-positive' : 'is-negative'}">${hypothesis.differencePct >= 0 ? '+' : ''}${hypothesis.differencePct.toFixed(4)}%</strong></div><div><span>PERMUTATION P-VALUE</span><strong>${hypothesis.pValue.toFixed(4)}</strong></div></div><p class="result-caption">Positive-momentum mean: ${hypothesis.positiveGroupMeanPct.toFixed(4)}%; non-positive mean: ${hypothesis.nonPositiveGroupMeanPct.toFixed(4)}%. Contiguous-block test with ${hypothesis.permutations.toLocaleString()} shuffles and ${hypothesis.blockLength}-session blocks.</p>`
     : `<p class="empty-state">${escapeHTML(hypothesis.error)} The selected dataset may not have five observations in each group.</p>`;
   const autopsyMarkup = autopsy.valid
     ? `<div class="experiment-metric-grid intelligence-metrics">${experimentMetric('Strategy return', autopsy.strategyReturn, '%')}${experimentMetric('Buy & hold', autopsy.buyAndHoldReturn, '%')}${experimentMetric('Relative return', autopsy.relativeReturn, '%')}${experimentMetric('Time invested', autopsy.timeInvestedPct, '%')}${experimentMetric('Entries', autopsy.entryCount, '')}${experimentMetric('Exits', autopsy.exitCount, '')}${experimentMetric('Best session', autopsy.bestSession.returnPct, '%')}${experimentMetric('Worst session', autopsy.worstSession.returnPct, '%')}</div><p class="result-caption">Best: ${escapeHTML(autopsy.bestSession.date)}. Worst: ${escapeHTML(autopsy.worstSession.date)}. ${escapeHTML(autopsy.caveats[1])}</p>`
@@ -688,6 +689,7 @@ function renderResearchIntelligencePanel(experiment, options = {}) {
       <label class="field-label" for="regime-window">Regime window<select id="regime-window"><option value="10" ${regimeWindow === 10 ? 'selected' : ''}>10 sessions</option><option value="20" ${regimeWindow === 20 ? 'selected' : ''}>20 sessions</option><option value="40" ${regimeWindow === 40 ? 'selected' : ''}>40 sessions</option><option value="60" ${regimeWindow === 60 ? 'selected' : ''}>60 sessions</option></select></label>
       <label class="field-label" for="hypothesis-lookback">Momentum lookback<select id="hypothesis-lookback"><option value="3" ${lookback === 3 ? 'selected' : ''}>3 sessions</option><option value="5" ${lookback === 5 ? 'selected' : ''}>5 sessions</option><option value="10" ${lookback === 10 ? 'selected' : ''}>10 sessions</option><option value="20" ${lookback === 20 ? 'selected' : ''}>20 sessions</option></select></label>
       <label class="field-label" for="hypothesis-permutations">Permutation count<select id="hypothesis-permutations"><option value="199" ${permutations === 199 ? 'selected' : ''}>199</option><option value="999" ${permutations === 999 ? 'selected' : ''}>999</option><option value="4999" ${permutations === 4999 ? 'selected' : ''}>4,999</option></select></label>
+      <label class="field-label" for="hypothesis-block-length">Block length<select id="hypothesis-block-length"><option value="2" ${blockLength === 2 ? 'selected' : ''}>2 sessions</option><option value="5" ${blockLength === 5 ? 'selected' : ''}>5 sessions</option><option value="10" ${blockLength === 10 ? 'selected' : ''}>10 sessions</option><option value="20" ${blockLength === 20 ? 'selected' : ''}>20 sessions</option></select></label>
       <div class="field-action"><button class="primary-button" type="button" data-action="run-research-analysis">Run analysis</button></div>
     </div>
     <div class="intelligence-section"><div class="panel-heading"><div><p class="section-kicker">01 / MARKET REGIME DETECTOR</p><h3>Market conditions</h3></div><span class="status-tag ${regimes.valid && latest ? 'status-pass' : 'status-warning'}">${regimes.valid && latest ? 'CALCULATED' : 'INSUFFICIENT DATA'}</span></div>
@@ -697,7 +699,7 @@ function renderResearchIntelligencePanel(experiment, options = {}) {
     </div>
     <div class="intelligence-section"><div class="panel-heading"><div><p class="section-kicker">02 / STRATEGY AUTOPSY</p><h3>What happened inside the backtest?</h3></div><span class="sim-tag">NEXT-SESSION ALIGNED</span></div>${autopsyMarkup}</div>
     <div class="intelligence-section"><div class="panel-heading"><div><p class="section-kicker">03 / RESEARCH LAB</p><h3>Momentum hypothesis test</h3></div><span class="sim-tag">EXPLORATORY</span></div>${hypothesisMarkup}
-      <p class="research-caveat">Statistical limitation: this permutation test shuffles individual returns and does not preserve time-series dependence. Overlapping lookbacks and autocorrelation can make its p-value too optimistic. Treat it as a teaching diagnostic, not confirmatory evidence or a trading signal.</p>
+      <p class="research-caveat">Statistical limitation: contiguous block shuffling retains some local return dependence, but does not fully solve non-stationarity, overlapping lookbacks, or dependence between momentum labels and returns. Treat the p-value as exploratory, not confirmatory evidence or a trading signal.</p>
     </div>
   </section>`;
 }
@@ -1120,6 +1122,7 @@ secondaryView.addEventListener('click', (event) => {
       regimeWindow: Number(document.querySelector('#regime-window')?.value ?? 20),
       lookback: Number(document.querySelector('#hypothesis-lookback')?.value ?? 5),
       permutations: Number(document.querySelector('#hypothesis-permutations')?.value ?? 999),
+      blockLength: Number(document.querySelector('#hypothesis-block-length')?.value ?? 5),
     };
     const panel = document.querySelector('#research-intelligence');
     if (panel) panel.outerHTML = renderResearchIntelligencePanel(selected, options);
