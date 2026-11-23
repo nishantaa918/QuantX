@@ -6,6 +6,7 @@ import {
   buildResearchIntelligenceReport,
   detectMarketRegimes,
   testMomentumHypothesis,
+  testMomentumHacFamily,
 } from '../src/research-engine.js';
 
 const strategy = { type: 'moving-average', shortWindow: 2, longWindow: 6, lookback: 10, volatilitySensitivity: 1.5 };
@@ -180,4 +181,34 @@ test('combined research report keeps each analysis independently available', () 
   assert.equal(report.regimes.valid, true);
   assert.equal(report.autopsy.valid, true);
   assert.equal(report.hypothesis.valid, true);
+});
+
+
+test('HAC momentum family uses aligned samples and BY-adjusted p-values reproducibly', () => {
+  let state = 73;
+  const random = () => {
+    state = (1664525 * state + 1013904223) >>> 0;
+    return state / 4294967296;
+  };
+  const values = [100];
+  for (let index = 0; index < 260; index += 1) {
+    values.push(values.at(-1) * (1 + 0.0003 + (random() - 0.5) * 0.018));
+  }
+  const series = datedSeries(values);
+  const first = testMomentumHacFamily(series);
+  const second = testMomentumHacFamily(series);
+  assert.equal(first.valid, true);
+  assert.deepEqual(first, second);
+  assert.equal(first.adjustmentMethod, 'by');
+  assert.equal(first.familySize, 4);
+  assert.equal(first.observations, values.length - 21);
+  assert.ok(first.results.every((item) => item.observations === first.observations));
+  assert.ok(first.results.every((item) => item.adjustedPValue >= item.pValue));
+  assert.ok(first.results.every((item) => Number.isFinite(item.coefficient) && Number.isFinite(item.standardError)));
+});
+
+test('HAC momentum family rejects short history and invalid lookback families', () => {
+  assert.equal(testMomentumHacFamily(trendingSeries(24)).valid, false);
+  assert.equal(testMomentumHacFamily(trendingSeries(90), { lookbacks: [5, 5] }).valid, false);
+  assert.equal(testMomentumHacFamily(trendingSeries(90), { alpha: 1 }).valid, false);
 });
