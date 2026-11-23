@@ -8,7 +8,9 @@ export const DEFAULT_STRATEGY = {
   volatilitySensitivity: 1.5,
 };
 
-export const DEFAULT_EXECUTION_COSTS = { commissionBps: 1, slippageBps: 5 };\n\nexport const DEFAULT_GUARDRAILS = {
+export const DEFAULT_EXECUTION_COSTS = { commissionBps: 1, slippageBps: 5 };
+
+export const DEFAULT_GUARDRAILS = {
   maxDrawdown: 12,
   maxVolatility: 30,
   maxExposure: 100,
@@ -345,9 +347,9 @@ export function evaluatePolicyDiagnostics(series, parameters, backtest, guardrai
   return { status: overallStatus(checks), checks, validation };
 }
 
-export function evaluatePolicyState({ series, parameters = DEFAULT_STRATEGY, thresholds = DEFAULT_GUARDRAILS, backtestSeries = null } = {}) {
-  const currentBacktest = calculateStrategyBacktest(series, parameters);
-  const latestBacktest = backtestSeries ? calculateStrategyBacktest(backtestSeries, parameters) : null;
+export function evaluatePolicyState({ series, parameters = DEFAULT_STRATEGY, thresholds = DEFAULT_GUARDRAILS, backtestSeries = null, executionCosts = DEFAULT_EXECUTION_COSTS } = {}) {
+  const currentBacktest = calculateStrategyBacktest(series, parameters, 100_000, executionCosts);
+  const latestBacktest = backtestSeries ? calculateStrategyBacktest(backtestSeries, parameters, 100_000, executionCosts) : null;
   const guardrails = evaluateRiskGuardrails(latestBacktest, thresholds);
   const diagnostics = evaluatePolicyDiagnostics(backtestSeries ?? series, parameters, latestBacktest ?? currentBacktest, guardrails);
   return { currentBacktest, latestBacktest, guardrails, diagnostics };
