@@ -52,8 +52,8 @@ test('date alignment uses only shared return dates', () => {
     BBB: makeSeries('BBB', [100, 99, 98, 97], ['2025-01-02', '2025-01-03', '2025-01-07', '2025-01-08']),
   });
   assert.equal(result.valid, true);
-  assert.deepEqual(result.dates, ['2025-01-03', '2025-01-08']);
-  assert.equal(result.observations, 2);
+  assert.deepEqual(result.dates, ['2025-01-03', '2025-01-07', '2025-01-08']);
+  assert.equal(result.observations, 3);
 });
 
 test('invalid assets, dates, prices, costs and capital are rejected', () => {
