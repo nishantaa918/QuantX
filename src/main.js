@@ -148,6 +148,7 @@ function hydrateExperiment(stored) {
     strategyName: String(stored.strategyName ?? (typeof stored.strategy === 'string' ? stored.strategy : getStrategyName(strategy.type))),
     dataSource,
     symbol: dataSource === 'historical' ? series.symbol : null,
+    priceBasis: dataSource === 'historical' ? series.priceBasis ?? stored.priceBasis ?? 'raw' : null,
     strategyConfig: strategy,
     guardrailThresholds: thresholds,
     executionCosts: storedExecutionCosts,
@@ -787,6 +788,8 @@ function openExperiment(experimentId) {
   liveSimulationController.setStrategy(strategyConfig);
   guardrailThresholds = { ...experiment.guardrailThresholds };
   executionCosts = { ...DEFAULT_EXECUTION_COSTS, ...experiment.executionCosts };
+  selectedHistoricalSymbol = experiment.symbol ?? selectedHistoricalSymbol;
+  selectedPriceBasis = experiment.priceBasis ?? experiment.series?.priceBasis ?? 'raw';
   try { localStorage.setItem(EXECUTION_COST_STORAGE_KEY, JSON.stringify(executionCosts)); } catch { /* keep the preference in memory */ }
   if (experiment.kind === 'backtest') latestBacktestSeries = experiment.series;
   currentPeriod = experiment.period;
@@ -888,7 +891,7 @@ async function runBacktest() {
   const seedValue = Number(document.querySelector('#backtest-seed').value);
   const dataSource = document.querySelector('#backtest-data-source').value;
   const symbol = document.querySelector('#backtest-symbol').value;
-  const priceBasis = document.querySelector('#backtest-price-basis').value;
+  const priceBasis = dataSource === 'historical' ? document.querySelector('#backtest-price-basis').value : 'raw';
   selectedHistoricalSymbol = symbol;
   selectedPriceBasis = priceBasis;
   const costValidation = validateExecutionCosts({ commissionBps: Number(document.querySelector('#commission-bps').value), slippageBps: Number(document.querySelector('#slippage-bps').value) });
