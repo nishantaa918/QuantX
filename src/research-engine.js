@@ -132,6 +132,31 @@ export function analyzeStrategyBacktest(series, backtest) {
     activeReturnPct: strategyReturn - buyAndHoldReturn,
     meanDailyActiveReturnPct: activeMean * 100,
   };
+  const downsideSquares = strategyReturns.map((value) => Math.min(value, 0) ** 2);
+  const downsideDeviationDaily = Math.sqrt(downsideSquares.reduce((sum, value) => sum + value, 0) / Math.max(1, downsideSquares.length));
+  const downsideDeviationPct = downsideDeviationDaily * Math.sqrt(252) * 100;
+  const annualizedReturnPct = strategyReturns.length
+    ? ((backtest.equityCurve.at(-1) / backtest.equityCurve[0]) ** (252 / strategyReturns.length) - 1) * 100
+    : null;
+  const maximumDrawdownPct = Math.abs(backtest.metrics?.maxDrawdown ?? 0);
+  const sortinoRatio = downsideDeviationDaily > 1e-12
+    ? strategyMean / downsideDeviationDaily * Math.sqrt(252)
+    : null;
+  const calmarRatio = maximumDrawdownPct > 1e-12 && Number.isFinite(annualizedReturnPct)
+    ? annualizedReturnPct / maximumDrawdownPct
+    : null;
+  let runningPeak = backtest.equityCurve[0];
+  let currentDrawdownDuration = 0;
+  let maxDrawdownDurationSessions = 0;
+  for (const equity of backtest.equityCurve) {
+    runningPeak = Math.max(runningPeak, equity);
+    if (equity < runningPeak) {
+      currentDrawdownDuration += 1;
+      maxDrawdownDurationSessions = Math.max(maxDrawdownDurationSessions, currentDrawdownDuration);
+    } else {
+      currentDrawdownDuration = 0;
+    }
+  }
   const grossPositiveContribution = sessions.filter((item) => item.contributionPct > 0).reduce((sum, item) => sum + item.contributionPct, 0);
   const grossNegativeContribution = sessions.filter((item) => item.contributionPct < 0).reduce((sum, item) => sum + item.contributionPct, 0);
 
@@ -141,6 +166,14 @@ export function analyzeStrategyBacktest(series, backtest) {
     buyAndHoldReturn,
     relativeReturn: strategyReturn - buyAndHoldReturn,
     benchmarkDiagnostics,
+    downsideRisk: {
+      targetDailyReturnPct: 0,
+      downsideDeviationPct,
+      sortinoRatio,
+      annualizedReturnPct,
+      calmarRatio,
+      maxDrawdownDurationSessions,
+    },
     activeSessions,
     totalSessions: sessions.length,
     timeInvestedPct: activeSessions / sessions.length * 100,
@@ -157,6 +190,7 @@ export function analyzeStrategyBacktest(series, backtest) {
       'Exposure is shifted one session to match next-session execution in the backtest engine.',
       'Return attribution is arithmetic daily contribution, not a compounded decomposition.',
       'Beta and alpha use daily arithmetic returns, a zero risk-free-rate assumption, and an in-sample linear regression; they are descriptive estimates, not forecasts.',
+      'Sortino uses a 0% daily target; Calmar annualizes the sample return using 252 sessions and divides by absolute maximum drawdown. Both can be unstable on short samples.',
       'Fees, slippage, liquidity, dividends, and corporate actions are not included unless represented in the input data and engine.',
     ],
   };

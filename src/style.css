@@ -551,3 +551,6 @@ table { width: 100%; border-collapse: collapse; text-align: left; }
 .benchmark-diagnostics { margin-top: 15px; padding: 14px; border: 1px solid var(--border); background: rgba(7, 12, 17, .24); }
 .benchmark-diagnostics > .section-kicker { margin-bottom: 12px; }
 .benchmark-diagnostics .experiment-metric-grid { margin-bottom: 0; }
+
+.downside-risk-diagnostics { margin-top: 14px; }
+.downside-risk-diagnostics .section-kicker { margin-bottom: 8px; }
