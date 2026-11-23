@@ -18,6 +18,7 @@ import {
 } from './strategy-analysis.js';
 import { createReplayController } from './replay-controller.js';
 import { createSimulationController, createSyntheticSimulation } from './simulation-engine.js';
+import { analyzeStrategyBacktest, detectMarketRegimes, testMomentumHypothesis } from './research-engine.js';
 
 const STORAGE_KEY = 'quantx.midnight.experiments';
 const STRATEGY_STORAGE_KEY = 'quantx.midnight.strategy';
@@ -657,8 +658,48 @@ function renderResearchPage() {
       <div class="table-scroll"><table class="workspace-table research-table"><thead><tr><th>EXPERIMENT</th><th>STRATEGY</th><th>RUN TYPE</th><th>RUN TIME</th><th>STATUS</th><th></th></tr></thead><tbody>${experimentRows}</tbody></table></div><p class="table-note">Synthetic runs are regenerated from their saved seed; historical runs retain their original dated observations in this browser. Clearing browser storage removes this log.</p>
     </section>
     <section class="panel page-panel experiment-analysis-panel"><div class="panel-heading"><div><p class="section-kicker">CALCULATED RESULTS</p><h2>Experiment analysis</h2></div></div>${analysis}</section>
+    ${renderResearchIntelligencePanel(selected)}
     ${renderPolicyHeatmap('sharpeRatio')}
     ${renderCoverageMonitor(null, 'Research coverage')}`;
+}
+
+function renderResearchIntelligencePanel(experiment, options = {}) {
+  if (!experiment) return '<section class="panel page-panel intelligence-panel"><div class="panel-heading"><div><p class="section-kicker">RESEARCH INTELLIGENCE</p><h2>Regimes / Strategy Autopsy / Hypothesis Lab</h2></div><span class="sim-tag">AWAITING DATA</span></div><p class="empty-state">Save a backtest or simulation first. These tools analyse the selected run’s price series and strategy output.</p></section>';
+
+  const regimeWindow = Number.isInteger(options.regimeWindow) ? options.regimeWindow : 20;
+  const lookback = Number.isInteger(options.lookback) ? options.lookback : 5;
+  const permutations = Number.isInteger(options.permutations) ? options.permutations : 999;
+  const regimes = detectMarketRegimes(experiment.series, { window: regimeWindow });
+  const autopsy = analyzeStrategyBacktest(experiment.series, experiment.backtest);
+  const hypothesis = testMomentumHypothesis(experiment.series, { lookback, permutations, seed: 2026 });
+  const latest = regimes.latest;
+  const recent = regimes.valid ? regimes.regimes.filter((item) => item.ready).slice(-10).reverse() : [];
+  const regimeRows = recent.map((item) => `<tr><td>${escapeHTML(item.date)}</td><td>${escapeHTML(item.direction)}</td><td>${escapeHTML(item.volatilityLevel)}</td><td class="mono-cell">${item.windowReturn.toFixed(2)}%</td><td class="mono-cell">${item.volatility.toFixed(2)}%</td></tr>`).join('');
+  const hypothesisMarkup = hypothesis.valid
+    ? `<div class="result-summary"><div><span>POSITIVE MOMENTUM N</span><strong>${hypothesis.positiveCount}</strong></div><div><span>NON-POSITIVE N</span><strong>${hypothesis.nonPositiveCount}</strong></div><div><span>MEAN RETURN DIFFERENCE</span><strong class="${hypothesis.differencePct >= 0 ? 'is-positive' : 'is-negative'}">${hypothesis.differencePct >= 0 ? '+' : ''}${hypothesis.differencePct.toFixed(4)}%</strong></div><div><span>PERMUTATION P-VALUE</span><strong>${hypothesis.pValue.toFixed(4)}</strong></div></div><p class="result-caption">Positive-momentum mean: ${hypothesis.positiveGroupMeanPct.toFixed(4)}%; non-positive mean: ${hypothesis.nonPositiveGroupMeanPct.toFixed(4)}%. Two-sided test with ${hypothesis.permutations.toLocaleString()} shuffles.</p>`
+    : `<p class="empty-state">${escapeHTML(hypothesis.error)} The selected dataset may not have five observations in each group.</p>`;
+  const autopsyMarkup = autopsy.valid
+    ? `<div class="experiment-metric-grid intelligence-metrics">${experimentMetric('Strategy return', autopsy.strategyReturn, '%')}${experimentMetric('Buy & hold', autopsy.buyAndHoldReturn, '%')}${experimentMetric('Relative return', autopsy.relativeReturn, '%')}${experimentMetric('Time invested', autopsy.timeInvestedPct, '%')}${experimentMetric('Entries', autopsy.entryCount, '')}${experimentMetric('Exits', autopsy.exitCount, '')}${experimentMetric('Best session', autopsy.bestSession.returnPct, '%')}${experimentMetric('Worst session', autopsy.worstSession.returnPct, '%')}</div><p class="result-caption">Best: ${escapeHTML(autopsy.bestSession.date)}. Worst: ${escapeHTML(autopsy.worstSession.date)}. ${escapeHTML(autopsy.caveats[1])}</p>`
+    : `<p class="empty-state">${escapeHTML(autopsy.error)}</p>`;
+
+  return `<section class="panel page-panel intelligence-panel" id="research-intelligence">
+    <div class="panel-heading"><div><p class="section-kicker">RESEARCH INTELLIGENCE / ${escapeHTML(experiment.symbol ?? 'SYNTHETIC SERIES')}</p><h2>Three connected research tools</h2><p class="panel-subtitle">Analysing ${experiment.series.values.length} observations from “${escapeHTML(experiment.name)}”.</p></div><span class="sim-tag">LOCAL ANALYSIS</span></div>
+    <div class="intelligence-controls">
+      <label class="field-label" for="regime-window">Regime window<select id="regime-window"><option value="10" ${regimeWindow === 10 ? 'selected' : ''}>10 sessions</option><option value="20" ${regimeWindow === 20 ? 'selected' : ''}>20 sessions</option><option value="40" ${regimeWindow === 40 ? 'selected' : ''}>40 sessions</option><option value="60" ${regimeWindow === 60 ? 'selected' : ''}>60 sessions</option></select></label>
+      <label class="field-label" for="hypothesis-lookback">Momentum lookback<select id="hypothesis-lookback"><option value="3" ${lookback === 3 ? 'selected' : ''}>3 sessions</option><option value="5" ${lookback === 5 ? 'selected' : ''}>5 sessions</option><option value="10" ${lookback === 10 ? 'selected' : ''}>10 sessions</option><option value="20" ${lookback === 20 ? 'selected' : ''}>20 sessions</option></select></label>
+      <label class="field-label" for="hypothesis-permutations">Permutation count<select id="hypothesis-permutations"><option value="199" ${permutations === 199 ? 'selected' : ''}>199</option><option value="999" ${permutations === 999 ? 'selected' : ''}>999</option><option value="4999" ${permutations === 4999 ? 'selected' : ''}>4,999</option></select></label>
+      <div class="field-action"><button class="primary-button" type="button" data-action="run-research-analysis">Run analysis</button></div>
+    </div>
+    <div class="intelligence-section"><div class="panel-heading"><div><p class="section-kicker">01 / MARKET REGIME DETECTOR</p><h3>Market conditions</h3></div><span class="status-tag ${regimes.valid && latest ? 'status-pass' : 'status-warning'}">${regimes.valid && latest ? 'CALCULATED' : 'INSUFFICIENT DATA'}</span></div>
+      ${latest ? `<div class="intelligence-current-regime"><span class="attribute-label">LATEST CLASSIFICATION</span><strong>${escapeHTML(latest.label)}</strong><span>Window return ${latest.windowReturn.toFixed(2)}% / Annualized realized volatility ${latest.volatility.toFixed(2)}%</span></div>` : '<p class="empty-state">Not enough observations to classify a completed rolling regime.</p>'}
+      ${regimeRows ? `<div class="table-scroll"><table class="workspace-table intelligence-table"><thead><tr><th>DATE</th><th>DIRECTION</th><th>VOLATILITY</th><th>WINDOW RETURN</th><th>ANNUALIZED VOL</th></tr></thead><tbody>${regimeRows}</tbody></table></div>` : ''}
+      <p class="table-note">Trend labels use a fixed 4% rolling-return threshold. Volatility bands use 15% / 30% annualized thresholds. These are descriptive heuristics, not forecasts.</p>
+    </div>
+    <div class="intelligence-section"><div class="panel-heading"><div><p class="section-kicker">02 / STRATEGY AUTOPSY</p><h3>What happened inside the backtest?</h3></div><span class="sim-tag">NEXT-SESSION ALIGNED</span></div>${autopsyMarkup}</div>
+    <div class="intelligence-section"><div class="panel-heading"><div><p class="section-kicker">03 / RESEARCH LAB</p><h3>Momentum hypothesis test</h3></div><span class="sim-tag">EXPLORATORY</span></div>${hypothesisMarkup}
+      <p class="research-caveat">Statistical limitation: this permutation test shuffles individual returns and does not preserve time-series dependence. Overlapping lookbacks and autocorrelation can make its p-value too optimistic. Treat it as a teaching diagnostic, not confirmatory evidence or a trading signal.</p>
+    </div>
+  </section>`;
 }
 
 function renderSettingsPage() {
@@ -1073,6 +1114,17 @@ secondaryView.addEventListener('click', (event) => {
   const action = actionButton.dataset.action;
   if (action === 'load-historical-data') loadHistoricalMarketData();
   if (action === 'run-backtest') runBacktest();
+  if (action === 'run-research-analysis') {
+    const selected = experiments.find((experiment) => experiment.id === selectedExperimentId) ?? experiments[0] ?? null;
+    const options = {
+      regimeWindow: Number(document.querySelector('#regime-window')?.value ?? 20),
+      lookback: Number(document.querySelector('#hypothesis-lookback')?.value ?? 5),
+      permutations: Number(document.querySelector('#hypothesis-permutations')?.value ?? 999),
+    };
+    const panel = document.querySelector('#research-intelligence');
+    if (panel) panel.outerHTML = renderResearchIntelligencePanel(selected, options);
+    showToast('Research analysis recalculated for the selected experiment.');
+  }
   if (action === 'save-guardrails') saveGuardrailInputs();
   if (action === 'apply-heatmap') selectHeatmapParameters(actionButton);
   if (action === 'replay-prev') replayController?.previous();
