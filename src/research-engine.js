@@ -136,53 +136,69 @@ export function testMomentumHypothesis(series, {
   lookback = 5,
   permutations = 999,
   seed = 2026,
+  blockLength = 5,
 } = {}) {
   if (!isPriceSeries(series)) return { valid: false, error: 'A positive price series with at least two observations is required.' };
   if (!Number.isInteger(lookback) || lookback < 2 || lookback > 60
     || !Number.isInteger(permutations) || permutations < 99 || permutations > 9999
-    || !Number.isInteger(seed)) {
-    return { valid: false, error: 'Use a 2-60 session lookback, 99-9,999 permutations, and an integer seed.' };
+    || !Number.isInteger(seed) || !Number.isInteger(blockLength) || blockLength < 2 || blockLength > 20) {
+    return { valid: false, error: 'Use a 2-60 session lookback, 99-9,999 permutations, an integer seed, and a 2-20 session block length.' };
   }
 
-  const positiveMomentum = [];
-  const nonPositiveMomentum = [];
-  for (let index = lookback; index < series.values.length - 0; index += 1) {
-    if (index >= series.values.length - 1) break;
+  const observations = [];
+  for (let index = lookback; index < series.values.length - 1; index += 1) {
     const priorReturn = series.values[index] / series.values[index - lookback] - 1;
     const nextReturn = series.values[index + 1] / series.values[index] - 1;
-    (priorReturn > 0 ? positiveMomentum : nonPositiveMomentum).push(nextReturn);
+    observations.push({ nextReturn, positive: priorReturn > 0 });
   }
+  const positiveMomentum = observations.filter((item) => item.positive).map((item) => item.nextReturn);
+  const nonPositiveMomentum = observations.filter((item) => !item.positive).map((item) => item.nextReturn);
   if (positiveMomentum.length < 5 || nonPositiveMomentum.length < 5) {
     return { valid: false, error: 'At least five observations in each momentum group are required.', positiveCount: positiveMomentum.length, nonPositiveCount: nonPositiveMomentum.length };
   }
+  if (blockLength >= observations.length) {
+    return { valid: false, error: 'Block length must be shorter than the available observation count.' };
+  }
 
-  const allReturns = [...positiveMomentum, ...nonPositiveMomentum];
+  const orderedReturns = observations.map((item) => item.nextReturn);
+  const positiveMask = observations.map((item) => item.positive);
   const observedDifference = mean(positiveMomentum) - mean(nonPositiveMomentum);
+  const blocks = [];
+  for (let index = 0; index < orderedReturns.length; index += blockLength) {
+    blocks.push(orderedReturns.slice(index, index + blockLength));
+  }
   const random = seededRandom(seed);
   let extreme = 0;
-  const positiveCount = positiveMomentum.length;
   for (let iteration = 0; iteration < permutations; iteration += 1) {
-    const shuffled = [...allReturns];
-    for (let index = shuffled.length - 1; index > 0; index -= 1) {
+    const shuffledBlocks = [...blocks];
+    for (let index = shuffledBlocks.length - 1; index > 0; index -= 1) {
       const swapIndex = Math.floor(random() * (index + 1));
-      [shuffled[index], shuffled[swapIndex]] = [shuffled[swapIndex], shuffled[index]];
+      [shuffledBlocks[index], shuffledBlocks[swapIndex]] = [shuffledBlocks[swapIndex], shuffledBlocks[index]];
     }
-    const permutedDifference = mean(shuffled.slice(0, positiveCount)) - mean(shuffled.slice(positiveCount));
+    const shuffledReturns = shuffledBlocks.flat();
+    let positiveSum = 0;
+    let nonPositiveSum = 0;
+    for (let index = 0; index < positiveMask.length; index += 1) {
+      if (positiveMask[index]) positiveSum += shuffledReturns[index];
+      else nonPositiveSum += shuffledReturns[index];
+    }
+    const permutedDifference = positiveSum / positiveMomentum.length - nonPositiveSum / nonPositiveMomentum.length;
     if (Math.abs(permutedDifference) >= Math.abs(observedDifference)) extreme += 1;
   }
   return {
     valid: true,
-    method: 'Two-sided permutation test',
+    method: 'Contiguous block permutation test',
     lookback,
+    blockLength,
     permutations,
-    positiveCount,
+    positiveCount: positiveMomentum.length,
     nonPositiveCount: nonPositiveMomentum.length,
     positiveGroupMeanPct: mean(positiveMomentum) * 100,
     nonPositiveGroupMeanPct: mean(nonPositiveMomentum) * 100,
     differencePct: observedDifference * 100,
     pValue: (extreme + 1) / (permutations + 1),
     seed,
-    interpretation: 'Exploratory association only. A small p-value does not establish causation, persistence, or future profitability.',
+    interpretation: 'Exploratory association only. Block shuffling retains some local return dependence, but does not establish causation, persistence, or future profitability.',
   };
 }
 

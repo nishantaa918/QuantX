@@ -71,18 +71,21 @@ test('strategy autopsy refuses misaligned or invalid backtests', () => {
 
 test('momentum hypothesis permutation test is reproducible and reports sample counts', () => {
   const series = mixedSeries(140);
-  const first = testMomentumHypothesis(series, { lookback: 5, permutations: 199, seed: 42 });
+  const first = testMomentumHypothesis(series, { lookback: 5, permutations: 199, seed: 42, blockLength: 5 });
   const second = testMomentumHypothesis(series, { lookback: 5, permutations: 199, seed: 42 });
   assert.equal(first.valid, true);
   assert.deepEqual(first, second);
   assert.equal(first.positiveCount + first.nonPositiveCount, series.values.length - 6);
   assert.ok(first.pValue > 0 && first.pValue <= 1);
+  assert.equal(first.method, 'Contiguous block permutation test');
+  assert.equal(first.blockLength, 5);
   assert.ok(Number.isFinite(first.differencePct));
 });
 
 test('momentum hypothesis rejects insufficient samples and unsupported settings', () => {
   assert.equal(testMomentumHypothesis(datedSeries([100, 101, 99, 102])).valid, false);
   assert.equal(testMomentumHypothesis(trendingSeries(), { permutations: 10 }).valid, false);
+  assert.equal(testMomentumHypothesis(mixedSeries(), { blockLength: 1 }).valid, false);
 });
 
 test('combined research report keeps each analysis independently available', () => {
