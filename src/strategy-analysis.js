@@ -56,7 +56,7 @@ export function getReplayReadiness(series, parameters = DEFAULT_STRATEGY) {
   const available = validation.valid && validSeries && observations >= requiredObservations;
   let reason = '';
   if (!validation.valid) reason = validation.errors.join(' ');
-  else if (!validSeries) reason = 'A valid synthetic price series is required for replay.';
+  else if (!validSeries) reason = 'A valid price series is required for replay.';
   else if (observations < requiredObservations) reason = `Replay needs ${requiredObservations} observations for the selected policy; this series has ${observations}.`;
   return {
     available,
