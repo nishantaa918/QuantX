@@ -69,3 +69,33 @@ export function normalizeAlphaVantageDaily(payload, { symbol = 'AAPL', limit = 1
     timeZone: metadata['5. Time Zone'] ?? null,
   };
 }
+
+
+export function toPriceSeries(observations, { symbol = 'AAPL' } = {}) {
+  if (!Array.isArray(observations) || observations.length < 2) {
+    throw new Error('Historical backtesting requires at least two daily observations.');
+  }
+  const normalizedSymbol = String(symbol).trim().toUpperCase();
+  if (!normalizedSymbol) throw new Error('A valid ticker symbol is required.');
+  let previousDate = '';
+  const cleanObservations = observations.map((observation) => {
+    if (!observation || !validateDate(observation.date) || observation.date <= previousDate) {
+      throw new Error('Historical observations must have unique, ascending calendar dates.');
+    }
+    previousDate = observation.date;
+    return {
+      ...observation,
+      symbol: normalizedSymbol,
+      close: parsePositiveNumber(observation.close, 'close', observation.date),
+    };
+  });
+  return {
+    period: 'HISTORICAL',
+    symbol: normalizedSymbol,
+    source: SOURCE,
+    frequency: FREQUENCY,
+    labels: cleanObservations.map((observation) => observation.date),
+    values: cleanObservations.map((observation) => observation.close),
+    observations: cleanObservations,
+  };
+}
