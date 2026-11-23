@@ -90,3 +90,62 @@ test('Vercel API handler serves multiple allowlisted US equities and ETFs', asyn
   await handler({ method: 'GET', url: '/api/market-data/daily?symbol=NOTREAL' }, unsupported);
   assert.equal(unsupported.result().status, 400);
 });
+
+
+test('quote endpoint returns a validated provider snapshot and keeps API credentials private', async () => {
+  const key = 'private-quote-key';
+  const handler = createMarketDataApiHandler({
+    apiKey: key,
+    now: () => Date.parse('2026-11-23T15:00:00.000Z'),
+    fetchImpl: async (url) => {
+      const params = new URL(url).searchParams;
+      assert.equal(params.get('function'), 'GLOBAL_QUOTE');
+      assert.equal(params.get('symbol'), 'MSFT');
+      assert.equal(params.get('apikey'), key);
+      return {
+        ok: true,
+        json: async () => ({
+          'Global Quote': {
+            '01. symbol': 'MSFT',
+            '05. price': '510.25',
+            '06. volume': '1234567',
+            '07. latest trading day': '2026-11-20',
+            '08. previous close': '505.00',
+            '09. change': '5.25',
+            '10. change percent': '1.0396%',
+          },
+        }),
+      };
+    },
+  });
+  const response = responseRecorder();
+  await handler({ method: 'GET', url: '/api/market-data/quote?symbol=MSFT' }, response);
+  const result = response.result();
+  assert.equal(result.status, 200);
+  assert.equal(result.body.status, 'quote');
+  assert.equal(result.body.data.price, 510.25);
+  assert.equal(result.body.data.changePercent, 1.0396);
+  assert.equal(result.body.data.latestTradingDay, '2026-11-20');
+  assert.equal(JSON.stringify(result.body).includes(key), false);
+});
+
+test('quote endpoint caches snapshots and rejects malformed provider responses', async () => {
+  let requests = 0;
+  const handler = createMarketDataApiHandler({
+    apiKey: 'quote-key',
+    fetchImpl: async () => {
+      requests += 1;
+      return { ok: true, json: async () => ({ 'Global Quote': {} }) };
+    },
+  });
+  const first = responseRecorder();
+  await handler({ method: 'GET', url: '/api/market-data/quote?symbol=AAPL' }, first);
+  assert.equal(first.result().status, 502);
+  assert.equal(first.result().body.status, 'unavailable');
+  assert.equal(requests, 1);
+
+  const noKey = createMarketDataApiHandler({ apiKey: '' });
+  const unavailable = responseRecorder();
+  await noKey({ method: 'GET', url: '/api/market-data/quote?symbol=AAPL' }, unavailable);
+  assert.equal(unavailable.result().status, 503);
+});
