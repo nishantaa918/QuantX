@@ -104,6 +104,33 @@ export function analyzeEqualWeightPortfolio(assets, { startingCapital = 100_000 
   const totalReturnPct = (equityCurve.at(-1) / startingCapital - 1) * 100;
   const annualizedReturnPct = ((equityCurve.at(-1) / startingCapital) ** (252 / portfolioReturns.length) - 1) * 100;
   const sharpeRatio = portfolioVolatilityDaily > 1e-12 ? portfolioMean / portfolioVolatilityDaily * Math.sqrt(252) : null;
+  const covarianceMatrix = symbols.map((_, row) => symbols.map((__, column) => {
+    const rowReturns = assetReturns[row];
+    const columnReturns = assetReturns[column];
+    const rowMean = mean(rowReturns);
+    const columnMean = mean(columnReturns);
+    return rowReturns.reduce((sum, value, index) => sum + (value - rowMean) * (columnReturns[index] - columnMean), 0) / (rowReturns.length - 1);
+  }));
+  const portfolioVariance = covarianceMatrix.reduce((sum, row, rowIndex) => sum
+    + row.reduce((rowSum, covariance, columnIndex) => rowSum + covariance / (assets.length * assets.length), 0), 0);
+  const portfolioDailyVolatility = Math.sqrt(Math.max(0, portfolioVariance));
+  const riskContributions = symbols.map((symbol, index) => {
+    if (portfolioDailyVolatility <= 1e-12) {
+      return { symbol, marginalRiskPct: null, componentRiskPct: null, riskContributionPct: null };
+    }
+    const covarianceWithPortfolio = covarianceMatrix[index].reduce((sum, covariance) => sum + covariance / assets.length, 0);
+    const marginalDailyRisk = covarianceWithPortfolio / portfolioDailyVolatility;
+    const componentDailyRisk = marginalDailyRisk / assets.length;
+    return {
+      symbol,
+      marginalRiskPct: marginalDailyRisk * Math.sqrt(252) * 100,
+      componentRiskPct: componentDailyRisk * Math.sqrt(252) * 100,
+      riskContributionPct: componentDailyRisk / portfolioDailyVolatility * 100,
+    };
+  });
+  const riskContributionTotalPct = riskContributions.every((item) => item.riskContributionPct !== null)
+    ? riskContributions.reduce((sum, item) => sum + item.riskContributionPct, 0)
+    : null;
   const correlationMatrix = symbols.map((symbol, row) => ({
     symbol,
     values: symbols.map((_, column) => row === column ? 1 : correlation(assetReturns[row], assetReturns[column])),
@@ -123,6 +150,8 @@ export function analyzeEqualWeightPortfolio(assets, { startingCapital = 100_000 
     dailyReturns: portfolioReturns,
     assetStats,
     correlationMatrix,
+    covarianceMatrix,
+    riskContributions,
     metrics: {
       totalReturnPct,
       annualizedReturnPct,
@@ -133,11 +162,13 @@ export function analyzeEqualWeightPortfolio(assets, { startingCapital = 100_000 
       diversificationBenefitPct: averageAssetVolatilityPct > 1e-12
         ? (averageAssetVolatilityPct - annualizedVolatilityPct) / averageAssetVolatilityPct * 100
         : null,
+      riskContributionTotalPct,
     },
     caveats: [
       'The portfolio is rebalanced to equal weights at every shared observation; this is a simplified daily-rebalanced baseline.',
       'The analysis uses only dates shared by every selected asset and may exclude valid observations outside the common window.',
       'Commissions, slippage, taxes, market impact, liquidity, cash drag, and execution delays are not modeled.',
+      'Risk contribution uses the sample covariance matrix and current equal weights; a negative contribution indicates a hedge against portfolio volatility.',
       'Historical adjusted closes account for provider adjustment methodology, but do not by themselves reconstruct an order-level dividend-reinvestment process.',
       'Annualized statistics are descriptive and can be unstable on short samples; correlation can change across market regimes.',
     ],
