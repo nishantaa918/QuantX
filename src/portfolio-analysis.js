@@ -46,8 +46,10 @@ function correlation(left, right) {
     leftVariance += x * x;
     rightVariance += y * y;
   }
-  if (leftVariance < 1e-20 || rightVariance < 1e-20) return null;
-  return Math.max(-1, Math.min(1, covariance / Math.sqrt(leftVariance * rightVariance)));
+  if (!Number.isFinite(leftVariance) || !Number.isFinite(rightVariance)
+    || leftVariance < 1e-20 || rightVariance < 1e-20) return null;
+  const coefficient = covariance / Math.sqrt(leftVariance * rightVariance);
+  return Number.isFinite(coefficient) ? Math.max(-1, Math.min(1, coefficient)) : null;
 }
 
 /**
