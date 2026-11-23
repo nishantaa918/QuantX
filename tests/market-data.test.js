@@ -171,6 +171,9 @@ test('adjusted daily normalization preserves adjusted close, dividends, and spli
   const adjusted = toPriceSeries(normalized.observations, { symbol: 'AAPL', priceBasis: 'adjusted' });
   assert.equal(adjusted.adjustment, 'adjusted');
   assert.deepEqual(adjusted.values, [101.4, 102.5]);
+  assert.equal(adjusted.observations[0].rawClose, 103);
+  assert.equal(adjusted.observations[0].close, 101.4);
+  assert.equal(adjusted.observations[0].adjustment, 'adjusted');
   const raw = toPriceSeries(normalized.observations, { symbol: 'AAPL', priceBasis: 'raw' });
   assert.deepEqual(raw.values, [103, 104]);
 });
