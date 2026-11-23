@@ -140,9 +140,10 @@ export function analyzeStrategyBacktest(series, backtest, benchmarkSeries = seri
   const strategyStandardDeviation = Math.sqrt(strategyVariance);
   const trackingError = Math.sqrt(activeVariance) * Math.sqrt(252) * 100;
   const beta = benchmarkVariance > 1e-16 ? covariance / benchmarkVariance : null;
-  const correlation = benchmarkStandardDeviation > 1e-12 && strategyStandardDeviation > 1e-12
+  const rawCorrelation = benchmarkStandardDeviation > 1e-12 && strategyStandardDeviation > 1e-12
     ? covariance / (benchmarkStandardDeviation * strategyStandardDeviation)
     : null;
+  const correlation = rawCorrelation === null ? null : Math.max(-1, Math.min(1, rawCorrelation));
   const alphaDaily = beta === null ? null : strategyMean - beta * benchmarkMean;
   const benchmarkDiagnostics = {
     valid: benchmarkVariance > 1e-16 && strategyReturns.length >= 2,
