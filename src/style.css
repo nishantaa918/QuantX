@@ -585,3 +585,16 @@ table { width: 100%; border-collapse: collapse; text-align: left; }
   .form-grid { grid-template-columns: minmax(0, 1fr); }
   .form-grid .field-action { grid-column: auto; }
 }
+
+
+/* Provider quote snapshot */
+.live-quote-panel { margin-bottom: 18px; }
+.live-quote-grid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 14px; margin-top: 18px; }
+.live-quote-grid > div { display: grid; align-content: start; gap: 8px; min-width: 0; padding: 12px; border: 1px solid var(--border); background: rgba(255,255,255,.015); }
+.live-quote-grid span { color: var(--subtle); font-family: var(--font-mono); font-size: 8px; letter-spacing: .55px; }
+.live-quote-grid strong { overflow-wrap: anywhere; color: var(--text); font-family: var(--font-mono); font-size: 13px; font-weight: 500; }
+.live-quote-grid strong.is-positive { color: var(--positive, #35c99a); }
+.live-quote-grid strong.is-negative { color: var(--negative, #e47b7b); }
+.live-quote-panel .table-note { margin-top: 12px; }
+@media (max-width: 900px) { .live-quote-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 520px) { .live-quote-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; } }
