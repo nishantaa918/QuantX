@@ -496,3 +496,25 @@ table { width: 100%; border-collapse: collapse; text-align: left; }
   .experiment-analysis-controls .field-label { width: 100%; }
   .research-review-grid { gap: 10px; }
 }
+.intelligence-panel { margin-top: 16px; }
+.intelligence-panel > .panel-heading { align-items: center; margin-bottom: 17px; }
+.intelligence-controls { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)) auto; align-items: end; gap: 13px; padding: 14px 0 18px; border-top: 1px solid var(--border); }
+.intelligence-controls .field-label { min-width: 0; }
+.intelligence-controls select { width: 100%; min-height: 39px; padding: 0 9px; border: 1px solid var(--border-strong); background: #0b1219; color: var(--text); font-size: 10px; }
+.intelligence-section { padding: 17px 0; border-top: 1px solid var(--border); }
+.intelligence-section > .panel-heading { align-items: center; margin-bottom: 13px; }
+.intelligence-section h3 { margin: 0; color: var(--text); font-size: 12px; }
+.intelligence-current-regime { display: grid; gap: 7px; margin: 10px 0 14px; padding: 13px; border: 1px solid var(--border); background: rgba(7, 12, 17, .35); }
+.intelligence-current-regime strong { color: var(--emerald); font-size: 15px; font-weight: 600; }
+.intelligence-current-regime > span:last-child { color: var(--muted); font-size: 9px; }
+.intelligence-table { min-width: 630px; }
+.intelligence-table td, .intelligence-table th { padding: 0 10px; }
+.intelligence-table td:first-child, .intelligence-table th:first-child { padding-left: 3px; }
+.intelligence-metrics { margin-top: 8px; }
+.research-caveat { margin: 12px 0 0; padding: 11px 12px; border: 1px solid rgba(208, 166, 93, .24); color: #c5b38d; background: rgba(208, 166, 93, .045); font-size: 9px; line-height: 1.65; }
+@media (max-width: 680px) {
+  .intelligence-controls { grid-template-columns: minmax(0, 1fr); gap: 11px; }
+  .intelligence-controls .field-action .primary-button { width: 100%; }
+  .intelligence-panel { padding: 16px 13px; }
+  .intelligence-section > .panel-heading { align-items: start; flex-direction: column; gap: 8px; }
+}
