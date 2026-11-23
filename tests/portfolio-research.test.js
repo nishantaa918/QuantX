@@ -2,13 +2,14 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { analyzeEqualWeightPortfolio } from '../src/portfolio-research.js';
 
-function asset(symbol, values, labels = ['2025-01-01', '2025-01-02', '2025-01-03', '2025-01-04'], priceBasis = 'adjusted') {
+function asset(symbol, values, labels = null, priceBasis = 'adjusted') {
+  const dates = labels ?? Array.from({ length: values.length }, (_, index) => `2025-01-0${index + 1}`);
   return {
     symbol,
     series: {
       period: 'HISTORICAL',
       priceBasis,
-      labels,
+      labels: dates,
       values,
     },
   };
