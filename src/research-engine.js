@@ -74,7 +74,7 @@ export function detectMarketRegimes(series, {
  * Explains a completed long/flat backtest. Effective exposure is lagged one
  * observation because the strategy engine executes close-derived signals next session.
  */
-export function analyzeStrategyBacktest(series, backtest) {
+export function analyzeStrategyBacktest(series, backtest, benchmarkSeries = series) {
   if (!isPriceSeries(series) || !backtest?.valid || !Array.isArray(backtest.equityCurve)
     || !Array.isArray(backtest.dailyReturns) || !Array.isArray(backtest.exposures)
     || !backtest.dailyReturns.every(Number.isFinite)
@@ -101,8 +101,33 @@ export function analyzeStrategyBacktest(series, backtest) {
   const worstSession = sessions.reduce((worst, item) => item.returnPct < worst.returnPct ? item : worst, sessions[0]);
   const strategyReturn = (backtest.equityCurve.at(-1) / backtest.equityCurve[0] - 1) * 100;
   const buyAndHoldReturn = (series.values.at(-1) / series.values[0] - 1) * 100;
-  const strategyReturns = backtest.dailyReturns.slice(1);
-  const benchmarkReturns = series.values.slice(1).map((price, index) => price / series.values[index] - 1);
+  const alignedPairs = [];
+  if (benchmarkSeries === series) {
+    for (let index = 1; index < series.values.length; index += 1) {
+      alignedPairs.push({
+        date: dateAt(series, index),
+        strategyReturn: backtest.dailyReturns[index],
+        benchmarkReturn: series.values[index] / series.values[index - 1] - 1,
+      });
+    }
+  } else if (isPriceSeries(benchmarkSeries)
+    && Array.isArray(series.labels) && Array.isArray(benchmarkSeries.labels)
+    && series.labels.length === series.values.length
+    && benchmarkSeries.labels.length === benchmarkSeries.values.length) {
+    const benchmarkIndexByDate = new Map(benchmarkSeries.labels.map((date, index) => [date, index]));
+    for (let index = 1; index < series.values.length; index += 1) {
+      const currentBenchmarkIndex = benchmarkIndexByDate.get(series.labels[index]);
+      const previousBenchmarkIndex = benchmarkIndexByDate.get(series.labels[index - 1]);
+      if (currentBenchmarkIndex === undefined || previousBenchmarkIndex === undefined) continue;
+      alignedPairs.push({
+        date: series.labels[index],
+        strategyReturn: backtest.dailyReturns[index],
+        benchmarkReturn: benchmarkSeries.values[currentBenchmarkIndex] / benchmarkSeries.values[previousBenchmarkIndex] - 1,
+      });
+    }
+  }
+  const strategyReturns = alignedPairs.map((item) => item.strategyReturn);
+  const benchmarkReturns = alignedPairs.map((item) => item.benchmarkReturn);
   const activeReturns = strategyReturns.map((value, index) => value - benchmarkReturns[index]);
   const strategyMean = mean(strategyReturns);
   const benchmarkMean = mean(benchmarkReturns);
@@ -121,7 +146,7 @@ export function analyzeStrategyBacktest(series, backtest) {
   const alphaDaily = beta === null ? null : strategyMean - beta * benchmarkMean;
   const benchmarkDiagnostics = {
     valid: benchmarkVariance > 1e-16 && strategyReturns.length >= 2,
-    benchmark: 'Buy and hold of the selected price series',
+    benchmark: benchmarkSeries?.symbol ?? 'Buy and hold of the selected price series',
     observations: strategyReturns.length,
     riskFreeRateAnnualPct: 0,
     beta,
@@ -129,7 +154,8 @@ export function analyzeStrategyBacktest(series, backtest) {
     annualizedAlphaPct: alphaDaily === null ? null : alphaDaily * 252 * 100,
     trackingErrorPct: trackingError,
     informationRatio: trackingError > 1e-12 ? activeMean * 252 / (trackingError / 100) : null,
-    activeReturnPct: strategyReturn - buyAndHoldReturn,
+    activeReturnPct: (strategyReturns.reduce((equity, value) => equity * (1 + value), 1)
+      - benchmarkReturns.reduce((equity, value) => equity * (1 + value), 1)) * 100,
     meanDailyActiveReturnPct: activeMean * 100,
   };
   const grossPositiveContribution = sessions.filter((item) => item.contributionPct > 0).reduce((sum, item) => sum + item.contributionPct, 0);
