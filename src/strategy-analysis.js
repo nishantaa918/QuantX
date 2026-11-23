@@ -8,7 +8,7 @@ export const DEFAULT_STRATEGY = {
   volatilitySensitivity: 1.5,
 };
 
-export const DEFAULT_GUARDRAILS = {
+export const DEFAULT_EXECUTION_COSTS = { commissionBps: 1, slippageBps: 5 };\n\nexport const DEFAULT_GUARDRAILS = {
   maxDrawdown: 12,
   maxVolatility: 30,
   maxExposure: 100,
@@ -112,22 +112,43 @@ export function calculateStrategySignal(values, index, parameters = DEFAULT_STRA
   };
 }
 
-export function calculateStrategyBacktest(series, parameters = DEFAULT_STRATEGY, startingCapital = 100_000) {
+export function validateExecutionCosts(costs = DEFAULT_EXECUTION_COSTS) {
+  const config = { ...DEFAULT_EXECUTION_COSTS, ...costs };
+  const errors = [];
+  if (!Number.isFinite(config.commissionBps) || config.commissionBps < 0 || config.commissionBps > 100) {
+    errors.push('Commission must be between 0 and 100 basis points per unit turnover.');
+  }
+  if (!Number.isFinite(config.slippageBps) || config.slippageBps < 0 || config.slippageBps > 100) {
+    errors.push('Slippage must be between 0 and 100 basis points per unit turnover.');
+  }
+  return { valid: errors.length === 0, errors, config };
+}
+
+export function calculateStrategyBacktest(series, parameters = DEFAULT_STRATEGY, startingCapital = 100_000, executionCosts = DEFAULT_EXECUTION_COSTS) {
   const validation = validateStrategyParameters(parameters);
+  const costValidation = validateExecutionCosts(executionCosts);
   const values = series?.values;
-  if (!validation.valid || !finiteSeries(values) || !Number.isFinite(startingCapital) || startingCapital <= 0) {
+  if (!validation.valid || !costValidation.valid || !finiteSeries(values) || !Number.isFinite(startingCapital) || startingCapital <= 0) {
     return {
       valid: false,
-      errors: [...validation.errors, ...(!finiteSeries(values) ? ['Price history must contain at least two finite positive observations.'] : []), ...(!Number.isFinite(startingCapital) || startingCapital <= 0 ? ['Starting capital must be greater than zero.'] : [])],
+      errors: [...validation.errors, ...costValidation.errors, ...(!finiteSeries(values) ? ['Price history must contain at least two finite positive observations.'] : []), ...(!Number.isFinite(startingCapital) || startingCapital <= 0 ? ['Starting capital must be greater than zero.'] : [])],
       metrics: null,
+      grossMetrics: null,
       equityCurve: [],
+      grossEquityCurve: [],
       exposures: [],
       signals: [],
       shortAverage: [],
       longAverage: [],
       dailyReturns: [],
+      grossDailyReturns: [],
+      transactionCostsUSD: [],
+      totalTransactionCostsUSD: null,
+      totalTurnover: null,
+      tradeCount: null,
       maxDailyLoss: null,
       config: validation.config,
+      executionCosts: costValidation.config,
     };
   }
 
@@ -136,39 +157,68 @@ export function calculateStrategyBacktest(series, parameters = DEFAULT_STRATEGY,
   const longAverage = [];
   const signals = [];
   const exposures = [];
+  const targetExposures = [];
   const dailyReturns = [];
+  const grossDailyReturns = [];
   const equityCurve = [];
-  let previousExposure = 0;
+  const grossEquityCurve = [];
+  const transactionCostsUSD = [];
+  let totalTurnover = 0;
+  let tradeCount = 0;
+  const costRatePerUnitTurnover = (costValidation.config.commissionBps + costValidation.config.slippageBps) / 10_000;
 
   values.forEach((price, index) => {
     const policy = calculateStrategySignal(values, index, config);
     shortAverage.push(policy.shortAverage);
     longAverage.push(policy.longAverage);
-
     signals.push(policy.signal);
     exposures.push(policy.targetExposure * 100);
-    const targetExposure = policy.targetExposure;
-    const sessionReturn = index === 0 ? 0 : (price / values[index - 1] - 1) * previousExposure;
-    dailyReturns.push(sessionReturn);
-    equityCurve.push(index === 0 ? startingCapital : equityCurve.at(-1) * (1 + sessionReturn));
-    previousExposure = targetExposure;
+    targetExposures.push(policy.targetExposure);
+
+    // Close-derived signals become active on the next observation.
+    const effectiveExposure = index === 0 ? 0 : targetExposures[index - 1];
+    const priorEffectiveExposure = index < 2 ? 0 : targetExposures[index - 2];
+    const turnover = Math.abs(effectiveExposure - priorEffectiveExposure);
+    const grossSessionReturn = index === 0 ? 0 : (price / values[index - 1] - 1) * effectiveExposure;
+    const costRate = turnover * costRatePerUnitTurnover;
+    const netSessionReturn = grossSessionReturn - costRate;
+    const priorNetEquity = equityCurve.at(-1) ?? startingCapital;
+    const priorGrossEquity = grossEquityCurve.at(-1) ?? startingCapital;
+    const costAmount = priorNetEquity * costRate;
+
+    grossDailyReturns.push(grossSessionReturn);
+    dailyReturns.push(netSessionReturn);
+    grossEquityCurve.push(index === 0 ? startingCapital : priorGrossEquity * (1 + grossSessionReturn));
+    equityCurve.push(index === 0 ? startingCapital : priorNetEquity * (1 + netSessionReturn));
+    transactionCostsUSD.push(costAmount);
+    totalTurnover += turnover;
+    if (turnover > 0) tradeCount += 1;
   });
 
   const metrics = calculatePerformance(equityCurve);
+  const grossMetrics = calculatePerformance(grossEquityCurve);
   const maxDailyLoss = Math.max(0, ...dailyReturns.map((value) => -value * 100));
   return {
     valid: true,
     errors: [],
     metrics,
+    grossMetrics,
     equityCurve,
+    grossEquityCurve,
     exposures,
     signals,
     shortAverage,
     longAverage,
     dailyReturns,
+    grossDailyReturns,
+    transactionCostsUSD,
+    totalTransactionCostsUSD: transactionCostsUSD.reduce((sum, value) => sum + value, 0),
+    totalTurnover,
+    tradeCount,
     maxDailyLoss,
     maxExposure: Math.max(0, ...exposures),
     config,
+    executionCosts: costValidation.config,
   };
 }
 
