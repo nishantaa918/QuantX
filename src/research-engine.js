@@ -1,3 +1,5 @@
+import { adjustPValues, fitHacRegression } from './statistical-inference.js';
+
 function isPriceSeries(series) {
   return Array.isArray(series?.values)
     && series.values.length >= 2
@@ -268,6 +270,81 @@ export function testMomentumHypothesis(series, {
     pValue: (extreme + 1) / (permutations + 1),
     seed,
     interpretation: 'Exploratory association only. Block shuffling retains some local return dependence, but does not establish causation, persistence, or future profitability.',
+  };
+}
+
+
+/**
+ * Tests a pre-specified family of momentum lookbacks using next-session
+ * returns and Bartlett Newey-West HAC standard errors. All lookbacks share
+ * the same response dates; BY adjusts the resulting family of p-values.
+ * This is exploratory association analysis, not a causal or trading signal.
+ */
+export function testMomentumHacFamily(series, {
+  lookbacks = [2, 5, 10, 20],
+  alpha = 0.05,
+  bandwidth = 'newey-west',
+} = {}) {
+  if (!isPriceSeries(series)) {
+    return { valid: false, error: 'A positive price series with at least two observations is required.' };
+  }
+  if (!Array.isArray(lookbacks) || !lookbacks.length
+    || !lookbacks.every((value) => Number.isInteger(value) && value >= 2 && value <= 60)
+    || new Set(lookbacks).size !== lookbacks.length
+    || !Number.isFinite(alpha) || alpha <= 0 || alpha >= 1) {
+    return { valid: false, error: 'Use unique lookbacks from 2 to 60 sessions and alpha between zero and one.' };
+  }
+  const maximumLookback = Math.max(...lookbacks);
+  const observations = [];
+  for (let index = maximumLookback; index < series.values.length - 1; index += 1) {
+    observations.push({
+      response: series.values[index + 1] / series.values[index] - 1,
+      predictors: lookbacks.map((lookback) => series.values[index] / series.values[index - lookback] - 1),
+    });
+  }
+  if (observations.length < 5) {
+    return { valid: false, error: 'At least five aligned observations are required for HAC inference.', observations: observations.length };
+  }
+
+  const responses = observations.map((item) => item.response);
+  const results = lookbacks.map((lookback, column) => {
+    const design = observations.map((item) => [1, item.predictors[column]]);
+    const fit = fitHacRegression(responses, design, { bandwidth });
+    return fit.valid ? {
+      valid: true,
+      lookback,
+      observations: fit.observations,
+      coefficient: fit.coefficients[1],
+      standardError: fit.standardErrors[1],
+      statistic: fit.statistics[1],
+      pValue: fit.pValues[1],
+      bandwidth: fit.bandwidth,
+      warnings: fit.warnings,
+    } : { valid: false, lookback, error: fit.error };
+  });
+  if (results.some((item) => !item.valid)) {
+    return { valid: false, error: 'At least one lookback regression could not be estimated.', results };
+  }
+  const correction = adjustPValues(results.map((item) => item.pValue), { method: 'by', alpha });
+  if (!correction.valid) return correction;
+  return {
+    valid: true,
+    method: 'Newey-West HAC momentum regressions',
+    adjustmentMethod: 'by',
+    alpha,
+    observations: observations.length,
+    familySize: results.length,
+    referenceDistribution: 'asymptotic_standard_normal',
+    results: results.map((item, index) => ({
+      ...item,
+      adjustedPValue: correction.adjustedPValues[index],
+      reject: correction.reject[index],
+    })),
+    caveats: [
+      'Lookbacks form a pre-specified family; changing the family after inspecting results changes the multiple-testing problem.',
+      'BY controls FDR under arbitrary dependence when the individual p-values are valid; HAC inference here is asymptotic.',
+      'Associations are in-sample and do not establish causality or future profitability.',
+    ],
   };
 }
 
