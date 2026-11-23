@@ -60,3 +60,33 @@ test('Vercel API handler returns safe method and route errors', async () => {
   await handler({ method: 'GET', url: '/api/unknown' }, routeResponse);
   assert.equal(routeResponse.result().status, 404);
 });
+
+test('Vercel API handler serves multiple allowlisted US equities and ETFs', async () => {
+  const handler = createMarketDataApiHandler({
+    apiKey: 'multi-asset-key',
+    fetchImpl: async (url) => {
+      const symbol = new URL(url).searchParams.get('symbol');
+      return {
+        ok: true,
+        json: async () => ({
+          'Meta Data': { '2. Symbol': symbol },
+          'Time Series (Daily)': {
+            '2025-01-02': { '1. open': '101', '2. high': '103', '3. low': '100', '4. close': '102', '5. volume': '200' },
+            '2025-01-01': { '1. open': '100', '2. high': '102', '3. low': '99', '4. close': '101', '5. volume': '100' },
+          },
+        }),
+      };
+    },
+  });
+  for (const symbol of ['MSFT', 'SPY', 'QQQ']) {
+    const response = responseRecorder();
+    await handler({ method: 'GET', url: `/api/market-data/daily?symbol=${symbol}` }, response);
+    const result = response.result();
+    assert.equal(result.status, 200);
+    assert.equal(result.body.data.symbol, symbol);
+    assert.ok(result.body.data.observations.every((item) => item.symbol === symbol));
+  }
+  const unsupported = responseRecorder();
+  await handler({ method: 'GET', url: '/api/market-data/daily?symbol=NOTREAL' }, unsupported);
+  assert.equal(unsupported.result().status, 400);
+});
