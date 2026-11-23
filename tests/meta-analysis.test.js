@@ -60,3 +60,19 @@ test('two-study analysis omits prediction interval', () => {
   assert.equal(result.predictionInterval, null);
   assert.equal(result.predictionIntervalDegreesOfFreedom, null);
 });
+
+
+test('normal-reference confidence interval respects configured alpha', () => {
+  const effects = [0.2, 0.5, 0.9, 1.1];
+  const variances = [0.04, 0.05, 0.06, 0.05];
+  const ninetyFive = metaAnalyze(effects, variances, {
+    model: 'fixed', inference: 'normal', alpha: 0.05,
+  });
+  const ninety = metaAnalyze(effects, variances, {
+    model: 'fixed', inference: 'normal', alpha: 0.1,
+  });
+  const width95 = ninetyFive.confidenceInterval[1] - ninetyFive.confidenceInterval[0];
+  const width90 = ninety.confidenceInterval[1] - ninety.confidenceInterval[0];
+  assert.ok(width95 > width90);
+  assert.ok(Math.abs(width95 / (2 * ninetyFive.standardError) - 1.9599639845) < 1e-7);
+});
