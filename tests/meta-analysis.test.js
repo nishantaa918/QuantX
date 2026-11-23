@@ -34,7 +34,7 @@ test('REML estimator returns a nonnegative variance component', () => {
   assert.equal(result.valid, true);
   assert.ok(Number.isFinite(result.tauSquared));
   assert.ok(result.tauSquared >= 0);
-  assert.ok(result.hkScale > 1);
+  assert.ok(result.inferenceScale >= 1);
 });
 
 test('modified Hartung-Knapp does not shrink the conventional standard error', () => {
