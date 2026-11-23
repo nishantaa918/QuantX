@@ -8,6 +8,7 @@ import { SUPPORTED_HISTORICAL_SYMBOLS, toPriceSeries } from '../src/market-data.
 import * as research from '../src/research-engine.js';
 import { createSimulationController, createSyntheticSimulation } from '../src/simulation-engine.js';
 import { runWalkForwardValidation } from '../src/walk-forward.js';
+import { analyzeEqualWeightPortfolio } from '../src/portfolio-analysis.js';
 
 class ElementStub {
   constructor(dataset = {}) {
@@ -76,6 +77,7 @@ async function bootApplication(storage) {
     SUPPORTED_HISTORICAL_SYMBOLS,
     toPriceSeries,
     runWalkForwardValidation,
+    analyzeEqualWeightPortfolio,
     createPriceChart: () => chart,
     createLiveSimulationChart: () => chart,
     createReplayChart: () => chart,
