@@ -7,7 +7,7 @@ import {
   buildCoverage,
   calculateStrategyBacktest,
   classifyMarketScenario,
-  DEFAULT_GUARDRAILS,
+  DEFAULT_EXECUTION_COSTS,\n  DEFAULT_GUARDRAILS,
   DEFAULT_STRATEGY,
   evaluatePolicyDiagnostics,
   evaluateRiskGuardrails,
@@ -22,7 +22,7 @@ import { analyzeStrategyBacktest, detectMarketRegimes, testMomentumHypothesis } 
 
 const STORAGE_KEY = 'quantx.midnight.experiments';
 const STRATEGY_STORAGE_KEY = 'quantx.midnight.strategy';
-const GUARDRAIL_STORAGE_KEY = 'quantx.midnight.guardrails';
+const GUARDRAIL_STORAGE_KEY = 'quantx.midnight.guardrails';\nconst EXECUTION_COST_STORAGE_KEY = 'quantx.midnight.execution-costs';
 const pageDetails = {
   overview: ['Overview', 'RESEARCH WORKSPACE'],
   markets: ['Markets', 'SIMULATED UNIVERSE'],
@@ -38,7 +38,7 @@ let currentPage = 'overview';
 let currentPeriod = '1M';
 let simulationSeed = 126;
 let strategyConfig = loadStoredObject(STRATEGY_STORAGE_KEY, DEFAULT_STRATEGY);
-let guardrailThresholds = loadStoredObject(GUARDRAIL_STORAGE_KEY, DEFAULT_GUARDRAILS);
+let guardrailThresholds = loadStoredObject(GUARDRAIL_STORAGE_KEY, DEFAULT_GUARDRAILS);\nlet executionCosts = loadStoredObject(EXECUTION_COST_STORAGE_KEY, DEFAULT_EXECUTION_COSTS);
 let currentSeries = generateSeries(currentPeriod, simulationSeed);
 let liveSimulationEngine = createSyntheticSimulation({ seed: simulationSeed, strategy: strategyConfig });
 let liveSimulationChart;
@@ -50,7 +50,7 @@ let historicalLoadState = 'idle';
 let historicalLoadError = '';
 let experiments = loadExperiments();
 let latestBacktestSeries = experiments.find((experiment) => experiment.kind === 'backtest' && experiment.backtest.valid)?.series ?? null;
-let policyState = evaluatePolicyState({ series: currentSeries, parameters: strategyConfig, thresholds: guardrailThresholds, backtestSeries: latestBacktestSeries });
+let policyState = evaluatePolicyState({ series: currentSeries, parameters: strategyConfig, thresholds: guardrailThresholds, backtestSeries: latestBacktestSeries, executionCosts });
 let currentBacktest = policyState.currentBacktest;
 let latestBacktest = policyState.latestBacktest;
 let currentGuardrails = policyState.guardrails;
@@ -121,7 +121,7 @@ function hydrateExperiment(stored) {
   const series = dataSource === 'historical'
     ? toPriceSeries(stored.series.observations, { symbol: stored.symbol ?? stored.series.symbol ?? 'AAPL' })
     : generateSeries(period, seed);
-  const backtest = calculateStrategyBacktest(series, strategy);
+  const storedExecutionCosts = stored.executionCosts && typeof stored.executionCosts === 'object' ? { ...DEFAULT_EXECUTION_COSTS, ...stored.executionCosts } : { ...executionCosts };\n  const backtest = calculateStrategyBacktest(series, strategy, 100_000, storedExecutionCosts);
   const thresholds = stored.guardrailThresholds && typeof stored.guardrailThresholds === 'object'
     ? { ...DEFAULT_GUARDRAILS, ...stored.guardrailThresholds }
     : { ...guardrailThresholds };
@@ -168,7 +168,7 @@ function persistExperiments() {
       timestamp: experiment.timestamp,
       strategyName: experiment.strategyName,
       strategyConfig: experiment.strategyConfig,
-      guardrailThresholds: experiment.guardrailThresholds,
+      guardrailThresholds: experiment.guardrailThresholds,\n      executionCosts: experiment.executionCosts,
       dataSource: experiment.dataSource,
       symbol: experiment.symbol,
       series: experiment.dataSource === 'historical' ? { symbol: experiment.symbol, observations: experiment.series.observations } : undefined,
@@ -736,7 +736,7 @@ function openExperiment(experimentId) {
   stopReplay();
   strategyConfig = { ...experiment.strategyConfig };
   liveSimulationController.setStrategy(strategyConfig);
-  guardrailThresholds = { ...experiment.guardrailThresholds };
+  guardrailThresholds = { ...experiment.guardrailThresholds };\n  executionCosts = { ...DEFAULT_EXECUTION_COSTS, ...experiment.executionCosts };\n  try { localStorage.setItem(EXECUTION_COST_STORAGE_KEY, JSON.stringify(executionCosts)); } catch { /* local preference remains in memory */ }
   if (experiment.kind === 'backtest') latestBacktestSeries = experiment.series;
   currentPeriod = experiment.period;
   simulationSeed = experiment.seed;
