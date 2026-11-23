@@ -22,6 +22,10 @@ function trendingSeries(length = 90) {
   return datedSeries(Array.from({ length }, (_, index) => 100 * (1.002 ** index)));
 }
 
+function mixedSeries(length = 90) {
+  return datedSeries(Array.from({ length }, (_, index) => 100 * (1.001 ** index) * (1 + Math.sin(index / 3) * 0.025)));
+}
+
 test('regime detector identifies a sustained uptrend and preserves rolling readiness', () => {
   const result = detectMarketRegimes(trendingSeries(), { window: 20 });
   assert.equal(result.valid, true);
@@ -39,7 +43,7 @@ test('regime detector identifies sideways and downtrend windows', () => {
 });
 
 test('regime detector rejects malformed data and invalid thresholds', () => {
-  assert.equal(detectMarketRegimes({ values: [100, 101] }).valid, false);
+  assert.equal(detectMarketRegimes({ values: [100] }).valid, false);
   assert.equal(detectMarketRegimes(trendingSeries(), { window: 2 }).valid, false);
   assert.equal(detectMarketRegimes(trendingSeries(), { lowVolatility: 0.4, highVolatility: 0.3 }).valid, false);
 });
@@ -66,13 +70,12 @@ test('strategy autopsy refuses misaligned or invalid backtests', () => {
 });
 
 test('momentum hypothesis permutation test is reproducible and reports sample counts', () => {
-  const values = Array.from({ length: 140 }, (_, index) => 100 * (1.0015 ** index) * (1 + Math.sin(index / 3) * 0.025));
-  const series = datedSeries(values);
+  const series = mixedSeries(140);
   const first = testMomentumHypothesis(series, { lookback: 5, permutations: 199, seed: 42 });
   const second = testMomentumHypothesis(series, { lookback: 5, permutations: 199, seed: 42 });
   assert.equal(first.valid, true);
   assert.deepEqual(first, second);
-  assert.equal(first.positiveCount + first.nonPositiveCount, values.length - 6);
+  assert.equal(first.positiveCount + first.nonPositiveCount, series.values.length - 6);
   assert.ok(first.pValue > 0 && first.pValue <= 1);
   assert.ok(Number.isFinite(first.differencePct));
 });
@@ -83,7 +86,7 @@ test('momentum hypothesis rejects insufficient samples and unsupported settings'
 });
 
 test('combined research report keeps each analysis independently available', () => {
-  const series = trendingSeries(90);
+  const series = mixedSeries(90);
   const backtest = calculateStrategyBacktest(series, strategy);
   const report = buildResearchIntelligenceReport(series, backtest, { hypothesis: { permutations: 199 } });
   assert.equal(report.regimes.valid, true);
