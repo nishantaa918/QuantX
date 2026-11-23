@@ -6,7 +6,9 @@ A browser-based quantitative research and simulation terminal.
 
 Historical data supports a small allowlisted US equity and ETF universe: AAPL, MSFT, NVDA, AMZN, GOOGL, META, TSLA, SPY, QQQ, DIA, and IWM. The same-origin route accepts `/api/market-data/daily?symbol=SYMBOL&adjustment=raw|adjusted`. Raw mode requests daily OHLCV; adjusted mode requests adjusted closes plus dividend and split metadata from Alpha Vantage. The Markets and Backtesting pages expose the price-basis selector, and saved historical experiments retain the basis used for the run. Adjusted endpoint access depends on the provider plan and may be unavailable on free plans. The provider key is read only on the server and is never sent to the browser. Cache entries are separated by symbol and adjustment mode.
 
-### Local development
+#The Markets page also exposes a latest-quote snapshot at `/api/market-data/quote?symbol=SYMBOL`. It uses Alpha Vantage `GLOBAL_QUOTE`, keeps the API key server-side, and caches each symbol briefly. This is a provider snapshot, not a websocket/tick stream; quote freshness, delay, and availability depend on the Alpha Vantage plan and market-data entitlements. The interface displays the provider's latest trading day and retrieval time separately.
+
+## Local development
 
 1. Install dependencies with `npm ci`.
 2. Set the `ALPHA_VANTAGE_API_KEY` environment variable in the shell used to start Vite.
