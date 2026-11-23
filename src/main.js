@@ -570,7 +570,7 @@ function renderHistoricalMarketState() {
   button.disabled = historicalLoadState === 'loading';
   button.textContent = historicalMarketData ? 'Refresh selected history' : 'Load selected history';
   message.hidden = Boolean(historicalMarketData) || historicalLoadState === 'loading';
-  message.textContent = historicalLoadError || 'No historical response loaded. Configure the server key to request the selected symbol's daily data.';
+  message.textContent = historicalLoadError || "No historical response loaded. Configure the server key to request the selected symbol's daily data.";
   if (error) error.textContent = historicalLoadState === 'loading' ? 'Requesting selected daily data from the server-side provider proxy.' : historicalLoadError;
   const content = document.querySelector('#historical-market-content');
   if (content) content.hidden = !historicalMarketData;
