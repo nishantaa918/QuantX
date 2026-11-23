@@ -3,11 +3,11 @@ import test from 'node:test';
 import { calculatePerformance } from '../src/data.js';
 import {
   calculateStrategyBacktest,
-  DEFAULT_GUARDRAILS,
+  DEFAULT_EXECUTION_COSTS,\n  DEFAULT_GUARDRAILS,
   DEFAULT_STRATEGY,
   evaluatePolicyState,
   evaluateRiskGuardrails,
-  runParameterSweep,
+  runParameterSweep,\n  validateExecutionCosts,
 } from '../src/strategy-analysis.js';
 
 const activeStrategy = {
@@ -192,4 +192,37 @@ test('heatmap parameter results equal the underlying parameter-sweep backtests',
 
   assert.equal(sweep.length, 1);
   assert.deepEqual(sweep[0].metrics, direct.metrics);
+});
+
+test('execution costs reduce net equity and are charged on next-session entries', () => {
+  const series = risingSeries(80);
+  const noCosts = calculateStrategyBacktest(series, activeStrategy, 100_000, { commissionBps: 0, slippageBps: 0 });
+  const withCosts = calculateStrategyBacktest(series, activeStrategy, 100_000, { commissionBps: 1, slippageBps: 5 });
+
+  assert.equal(noCosts.valid, true);
+  assert.equal(withCosts.valid, true);
+  assert.equal(withCosts.tradeCount, 1);
+  assert.equal(withCosts.totalTurnover, 1);
+  assert.ok(Math.abs(withCosts.totalTransactionCostsUSD - 60) < 1e-8);
+  assert.ok(withCosts.equityCurve.at(-1) < noCosts.equityCurve.at(-1));
+  assert.ok(Math.abs(withCosts.grossEquityCurve.at(-1) - noCosts.equityCurve.at(-1)) < 1e-8);
+  assert.ok(withCosts.metrics.totalReturn < withCosts.grossMetrics.totalReturn);
+});
+
+test('execution-cost validation rejects negative and out-of-range assumptions', () => {
+  assert.deepEqual(validateExecutionCosts(DEFAULT_EXECUTION_COSTS), {
+    valid: true,
+    errors: [],
+    config: DEFAULT_EXECUTION_COSTS,
+  });
+  assert.equal(validateExecutionCosts({ commissionBps: -1, slippageBps: 5 }).valid, false);
+  assert.equal(validateExecutionCosts({ commissionBps: 1, slippageBps: 101 }).valid, false);
+});
+
+test('policy state uses the supplied execution-cost assumptions consistently', () => {
+  const series = risingSeries();
+  const free = evaluatePolicyState({ series, parameters: activeStrategy, backtestSeries: series, executionCosts: { commissionBps: 0, slippageBps: 0 } });
+  const costly = evaluatePolicyState({ series, parameters: activeStrategy, backtestSeries: series, executionCosts: { commissionBps: 1, slippageBps: 5 } });
+  assert.ok(costly.latestBacktest.metrics.totalReturn < free.latestBacktest.metrics.totalReturn);
+  assert.deepEqual(costly.latestBacktest.executionCosts, { commissionBps: 1, slippageBps: 5 });
 });
