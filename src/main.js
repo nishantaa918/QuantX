@@ -70,6 +70,8 @@ let replayController;
 let replayReadiness;
 let toastTimeout;
 let selectedExperimentId = null;
+let researchBenchmarkSymbol = 'SPY';
+const researchBenchmarkCache = new Map();
 
 const overviewView = document.querySelector('#overview-view');
 const secondaryView = document.querySelector('#secondary-view');
@@ -752,7 +754,10 @@ function renderResearchIntelligencePanel(experiment, options = {}) {
   const permutations = Number.isInteger(options.permutations) ? options.permutations : 999;
   const blockLength = Number.isInteger(options.blockLength) ? options.blockLength : 5;
   const regimes = detectMarketRegimes(experiment.series, { window: regimeWindow });
-  const autopsy = analyzeStrategyBacktest(experiment.series, experiment.backtest);
+  const benchmarkSymbol = options.benchmarkSymbol ?? researchBenchmarkSymbol;
+  const benchmarkSeries = options.benchmarkSeries ?? experiment.series;
+  const benchmarkError = options.benchmarkError ?? '';
+  const autopsy = analyzeStrategyBacktest(experiment.series, experiment.backtest, benchmarkSeries);
   const hypothesis = testMomentumHypothesis(experiment.series, { lookback, permutations, seed: 2026, blockLength });
   const latest = regimes.latest;
   const recent = regimes.valid ? regimes.regimes.filter((item) => item.ready).slice(-10).reverse() : [];
@@ -761,11 +766,17 @@ function renderResearchIntelligencePanel(experiment, options = {}) {
     ? `<div class="result-summary"><div><span>POSITIVE MOMENTUM N</span><strong>${hypothesis.positiveCount}</strong></div><div><span>NON-POSITIVE N</span><strong>${hypothesis.nonPositiveCount}</strong></div><div><span>MEAN RETURN DIFFERENCE</span><strong class="${hypothesis.differencePct >= 0 ? 'is-positive' : 'is-negative'}">${hypothesis.differencePct >= 0 ? '+' : ''}${hypothesis.differencePct.toFixed(4)}%</strong></div><div><span>PERMUTATION P-VALUE</span><strong>${hypothesis.pValue.toFixed(4)}</strong></div></div><p class="result-caption">Positive-momentum mean: ${hypothesis.positiveGroupMeanPct.toFixed(4)}%; non-positive mean: ${hypothesis.nonPositiveGroupMeanPct.toFixed(4)}%. Contiguous-block test with ${hypothesis.permutations.toLocaleString()} shuffles and ${hypothesis.blockLength}-session blocks.</p>`
     : `<p class="empty-state">${escapeHTML(hypothesis.error)} The selected dataset may not have five observations in each group.</p>`;
   const autopsyMarkup = autopsy.valid
-    ? `<div class="experiment-metric-grid intelligence-metrics">${experimentMetric('Strategy return', autopsy.strategyReturn, '%')}${experimentMetric('Buy & hold', autopsy.buyAndHoldReturn, '%')}${experimentMetric('Relative return', autopsy.relativeReturn, '%')}${experimentMetric('Time invested', autopsy.timeInvestedPct, '%')}${experimentMetric('Entries', autopsy.entryCount, '')}${experimentMetric('Exits', autopsy.exitCount, '')}${experimentMetric('Best session', autopsy.bestSession.returnPct, '%')}${experimentMetric('Worst session', autopsy.worstSession.returnPct, '%')}</div><div class="benchmark-diagnostics"><p class="section-kicker">BENCHMARK-RELATIVE RISK / ZERO RISK-FREE-RATE ASSUMPTION</p><div class="experiment-metric-grid intelligence-metrics">${experimentMetric('Beta', autopsy.benchmarkDiagnostics.beta, '')}${experimentMetric('Annualized alpha', autopsy.benchmarkDiagnostics.annualizedAlphaPct, '%')}${experimentMetric('Tracking error', autopsy.benchmarkDiagnostics.trackingErrorPct, '%')}${experimentMetric('Information ratio', autopsy.benchmarkDiagnostics.informationRatio, '')}${experimentMetric('Correlation', autopsy.benchmarkDiagnostics.correlation, '')}</div></div><div class="benchmark-diagnostics downside-risk-diagnostics"><p class="section-kicker">DOWNSIDE RISK / ZERO DAILY TARGET</p><div class="experiment-metric-grid intelligence-metrics">${experimentMetric('Sortino ratio', autopsy.downsideRisk.sortinoRatio, '')}${experimentMetric('Downside deviation', autopsy.downsideRisk.downsideDeviationPct, '%')}${experimentMetric('Calmar ratio', autopsy.downsideRisk.calmarRatio, '')}${experimentMetric('Annualized return', autopsy.downsideRisk.annualizedReturnPct, '%')}${experimentMetric('Max drawdown duration', autopsy.downsideRisk.maxDrawdownDurationSessions, ' sessions')}</div></div><p class="result-caption">Best: ${escapeHTML(autopsy.bestSession.date)}. Worst: ${escapeHTML(autopsy.worstSession.date)}. ${escapeHTML(autopsy.caveats[1])} ${escapeHTML(autopsy.caveats[2])} ${escapeHTML(autopsy.caveats[4])}</p>`
+    ? `<div class="experiment-metric-grid intelligence-metrics">${experimentMetric('Strategy return', autopsy.strategyReturn, '%')}${experimentMetric('Buy & hold', autopsy.buyAndHoldReturn, '%')}${experimentMetric('Relative return', autopsy.relativeReturn, '%')}${experimentMetric('Time invested', autopsy.timeInvestedPct, '%')}${experimentMetric('Entries', autopsy.entryCount, '')}${experimentMetric('Exits', autopsy.exitCount, '')}${experimentMetric('Best session', autopsy.bestSession.returnPct, '%')}${experimentMetric('Worst session', autopsy.worstSession.returnPct, '%')}</div><div class="benchmark-diagnostics"><p class="section-kicker">BENCHMARK-RELATIVE RISK / ${escapeHTML(autopsy.benchmarkDiagnostics.benchmark)} / ZERO RISK-FREE-RATE ASSUMPTION</p><div class="experiment-metric-grid intelligence-metrics">${experimentMetric('Beta', autopsy.benchmarkDiagnostics.beta, '')}${experimentMetric('Annualized alpha', autopsy.benchmarkDiagnostics.annualizedAlphaPct, '%')}${experimentMetric('Tracking error', autopsy.benchmarkDiagnostics.trackingErrorPct, '%')}${experimentMetric('Information ratio', autopsy.benchmarkDiagnostics.informationRatio, '')}${experimentMetric('Correlation', autopsy.benchmarkDiagnostics.correlation, '')}${experimentMetric('Matched active return', autopsy.benchmarkDiagnostics.activeReturnPct, '%')}</div></div><div class="benchmark-diagnostics downside-risk-diagnostics"><p class="section-kicker">DOWNSIDE RISK / ZERO DAILY TARGET</p><div class="experiment-metric-grid intelligence-metrics">${experimentMetric('Sortino ratio', autopsy.downsideRisk.sortinoRatio, '')}${experimentMetric('Downside deviation', autopsy.downsideRisk.downsideDeviationPct, '%')}${experimentMetric('Calmar ratio', autopsy.downsideRisk.calmarRatio, '')}${experimentMetric('Annualized return', autopsy.downsideRisk.annualizedReturnPct, '%')}${experimentMetric('Max drawdown duration', autopsy.downsideRisk.maxDrawdownDurationSessions, ' sessions')}</div></div><p class="result-caption">Best: ${escapeHTML(autopsy.bestSession.date)}. Worst: ${escapeHTML(autopsy.worstSession.date)}. ${escapeHTML(autopsy.caveats[1])} ${escapeHTML(autopsy.caveats[2])} ${escapeHTML(autopsy.caveats[4])}</p>`
     : `<p class="empty-state">${escapeHTML(autopsy.error)}</p>`;
 
   return `<section class="panel page-panel intelligence-panel" id="research-intelligence">
     <div class="panel-heading"><div><p class="section-kicker">RESEARCH INTELLIGENCE / ${escapeHTML(experiment.symbol ?? 'SYNTHETIC SERIES')}</p><h2>Three connected research tools</h2><p class="panel-subtitle">Analysing ${experiment.series.values.length} observations from “${escapeHTML(experiment.name)}”.</p></div><span class="sim-tag">LOCAL ANALYSIS</span></div>
+    <div class="benchmark-selector">
+      <label class="field-label" for="research-benchmark-symbol">Market benchmark<select id="research-benchmark-symbol"><option value="SPY" ${benchmarkSymbol === 'SPY' ? 'selected' : ''}>SPY / S&P 500 ETF</option><option value="QQQ" ${benchmarkSymbol === 'QQQ' ? 'selected' : ''}>QQQ / Nasdaq-100 ETF</option><option value="DIA" ${benchmarkSymbol === 'DIA' ? 'selected' : ''}>DIA / Dow Jones ETF</option><option value="IWM" ${benchmarkSymbol === 'IWM' ? 'selected' : ''}>IWM / Russell 2000 ETF</option></select></label>
+      <button class="secondary-button" type="button" data-action="load-research-benchmark" ${experiment.dataSource !== 'historical' ? 'disabled' : ''}>Load index comparison</button>
+      <span class="table-note">${benchmarkSeries !== experiment.series ? `Using date-matched ${escapeHTML(benchmarkSeries.symbol)} observations.` : 'Currently using the selected asset as its own buy-and-hold reference. Load an index comparison for a market-relative estimate.'}</span>
+      ${benchmarkError ? `<p class="form-error">${escapeHTML(benchmarkError)}</p>` : ''}
+    </div>
     <div class="intelligence-controls">
       <label class="field-label" for="regime-window">Regime window<select id="regime-window"><option value="10" ${regimeWindow === 10 ? 'selected' : ''}>10 sessions</option><option value="20" ${regimeWindow === 20 ? 'selected' : ''}>20 sessions</option><option value="40" ${regimeWindow === 40 ? 'selected' : ''}>40 sessions</option><option value="60" ${regimeWindow === 60 ? 'selected' : ''}>60 sessions</option></select></label>
       <label class="field-label" for="hypothesis-lookback">Momentum lookback<select id="hypothesis-lookback"><option value="3" ${lookback === 3 ? 'selected' : ''}>3 sessions</option><option value="5" ${lookback === 5 ? 'selected' : ''}>5 sessions</option><option value="10" ${lookback === 10 ? 'selected' : ''}>10 sessions</option><option value="20" ${lookback === 20 ? 'selected' : ''}>20 sessions</option></select></label>
@@ -783,6 +794,72 @@ function renderResearchIntelligencePanel(experiment, options = {}) {
       <p class="research-caveat">Statistical limitation: contiguous block shuffling retains some local return dependence, but does not fully solve non-stationarity, overlapping lookbacks, or dependence between momentum labels and returns. Treat the p-value as exploratory, not confirmatory evidence or a trading signal.</p>
     </div>
   </section>`;
+}
+
+async function loadResearchBenchmark() {
+  const selected = experiments.find((experiment) => experiment.id === selectedExperimentId) ?? experiments[0] ?? null;
+  if (!selected || selected.dataSource !== 'historical') {
+    showToast('External index comparison requires a dated historical experiment.');
+    return;
+  }
+  const symbol = document.querySelector('#research-benchmark-symbol')?.value ?? 'SPY';
+  researchBenchmarkSymbol = symbol;
+  const options = {
+    regimeWindow: Number(document.querySelector('#regime-window')?.value ?? 20),
+    lookback: Number(document.querySelector('#hypothesis-lookback')?.value ?? 5),
+    permutations: Number(document.querySelector('#hypothesis-permutations')?.value ?? 999),
+    blockLength: Number(document.querySelector('#hypothesis-block-length')?.value ?? 5),
+    benchmarkSymbol: symbol,
+  };
+  const panel = document.querySelector('#research-intelligence');
+  if (panel) panel.innerHTML = '<p class="empty-state">Loading benchmark history and aligning shared trading dates…</p>';
+  try {
+    let benchmarkSeries;
+    if (symbol === selected.symbol) {
+      benchmarkSeries = selected.series;
+    } else {
+      const cacheKey = `${selected.id}:${symbol}`;
+      benchmarkSeries = researchBenchmarkCache.get(cacheKey);
+      if (!benchmarkSeries) {
+        const response = await fetch(`/api/market-data/daily?symbol=${encodeURIComponent(symbol)}`, { headers: { Accept: 'application/json' } });
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload.message || `Benchmark request failed (${response.status}).`);
+        if (payload.status !== 'historical' || payload.data?.symbol !== symbol || !Array.isArray(payload.data.observations)) {
+          throw new Error(`No valid ${symbol} daily observations were returned.`);
+        }
+        benchmarkSeries = toPriceSeries(payload.data.observations, { symbol });
+        researchBenchmarkCache.set(cacheKey, benchmarkSeries);
+      }
+    }
+    const refreshedPanel = document.querySelector('#research-intelligence');
+    if (refreshedPanel) refreshedPanel.outerHTML = renderResearchIntelligencePanel(selected, { ...options, benchmarkSeries });
+    const diagnostic = analyzeStrategyBacktest(selected.series, selected.backtest, benchmarkSeries).benchmarkDiagnostics;
+    showToast(diagnostic.valid
+      ? `Compared ${selected.symbol} strategy returns with ${symbol} across ${diagnostic.observations} matched sessions.`
+      : `Loaded ${symbol}, but there are too few matched observations for stable regression metrics.`);
+  } catch (error) {
+    const refreshedPanel = document.querySelector('#research-intelligence');
+    if (refreshedPanel) refreshedPanel.outerHTML = renderResearchIntelligencePanel(selected, { ...options, benchmarkError: error.message });
+    showToast('Benchmark comparison could not be loaded.');
+  }
+}
+
+function runResearchAnalysis() {
+  const selected = experiments.find((experiment) => experiment.id === selectedExperimentId) ?? experiments[0] ?? null;
+  const options = {
+    regimeWindow: Number(document.querySelector('#regime-window')?.value ?? 20),
+    lookback: Number(document.querySelector('#hypothesis-lookback')?.value ?? 5),
+    permutations: Number(document.querySelector('#hypothesis-permutations')?.value ?? 999),
+    blockLength: Number(document.querySelector('#hypothesis-block-length')?.value ?? 5),
+    benchmarkSymbol: document.querySelector('#research-benchmark-symbol')?.value ?? researchBenchmarkSymbol,
+  };
+  researchBenchmarkSymbol = options.benchmarkSymbol;
+  const benchmarkSeries = selected?.dataSource === 'historical'
+    ? researchBenchmarkCache.get(`${selected.id}:${options.benchmarkSymbol}`) ?? (selected.symbol === options.benchmarkSymbol ? selected.series : null)
+    : null;
+  const panel = document.querySelector('#research-intelligence');
+  if (panel) panel.outerHTML = renderResearchIntelligencePanel(selected, { ...options, benchmarkSeries: benchmarkSeries ?? selected?.series });
+  showToast('Research analysis recalculated for the selected experiment.');
 }
 
 function renderSettingsPage() {
@@ -1231,18 +1308,8 @@ secondaryView.addEventListener('click', (event) => {
     if (output) output.innerHTML = renderPortfolioResearchResults(result);
     showToast(result.valid ? 'Cross-asset portfolio analysis completed.' : 'Portfolio analysis could not be completed.');
   }
-  if (action === 'run-research-analysis') {
-    const selected = experiments.find((experiment) => experiment.id === selectedExperimentId) ?? experiments[0] ?? null;
-    const options = {
-      regimeWindow: Number(document.querySelector('#regime-window')?.value ?? 20),
-      lookback: Number(document.querySelector('#hypothesis-lookback')?.value ?? 5),
-      permutations: Number(document.querySelector('#hypothesis-permutations')?.value ?? 999),
-      blockLength: Number(document.querySelector('#hypothesis-block-length')?.value ?? 5),
-    };
-    const panel = document.querySelector('#research-intelligence');
-    if (panel) panel.outerHTML = renderResearchIntelligencePanel(selected, options);
-    showToast('Research analysis recalculated for the selected experiment.');
-  }
+  if (action === 'run-research-analysis') runResearchAnalysis();
+  if (action === 'load-research-benchmark') loadResearchBenchmark();
   if (action === 'save-guardrails') saveGuardrailInputs();
   if (action === 'apply-heatmap') selectHeatmapParameters(actionButton);
   if (action === 'replay-prev') replayController?.previous();
