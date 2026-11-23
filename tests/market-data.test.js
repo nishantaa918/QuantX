@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createAlphaVantageMiddleware } from '../server/alpha-vantage-proxy.js';
-import { normalizeAlphaVantageDaily, normalizeAlphaVantageRows, toPriceSeries } from '../src/market-data.js';
+import { normalizeAlphaVantageDaily, normalizeAlphaVantageRows, SUPPORTED_HISTORICAL_SYMBOLS, toPriceSeries } from '../src/market-data.js';
 import { calculateStrategyBacktest } from '../src/strategy-analysis.js';
 
 const rows = [
@@ -45,6 +45,8 @@ test('Alpha Vantage normalization sorts dates, removes duplicates, and preserves
   });
   const payload = normalizeAlphaVantageDaily(dailyPayload());
   assert.equal(payload.adjustment, 'raw');
+  assert.ok(SUPPORTED_HISTORICAL_SYMBOLS.includes('SPY'));
+  assert.ok(SUPPORTED_HISTORICAL_SYMBOLS.includes('NVDA'));
   assert.equal(payload.observations.length, 3);
   assert.equal(payload.timeZone, 'US/Eastern');
 });
@@ -103,7 +105,7 @@ test('middleware maps provider and request errors to safe statuses', async () =>
   const failure = await callMiddleware(invalid);
   assert.equal(failure.status, 502);
   assert.equal(JSON.stringify(failure.body).includes('secret'), false);
-  assert.equal((await callMiddleware(invalid, { url: '/api/market-data/daily?symbol=MSFT' })).status, 400);
+  assert.equal((await callMiddleware(invalid, { url: '/api/market-data/daily?symbol=NOTREAL' })).status, 400);
   assert.equal((await callMiddleware(invalid, { method: 'POST' })).status, 405);
 });
 
