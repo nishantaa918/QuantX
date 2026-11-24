@@ -68,3 +68,18 @@ test('portfolio analysis rejects impossible calendar dates and accepts valid lea
   assert.equal(analyzeEqualWeightPortfolio([nonLeapDay, asset('QQQ', [100, 101, 102], nonLeapDay.series.labels)]).valid, false);
   assert.equal(analyzeEqualWeightPortfolio([validLeapDay, asset('QQQ', [100, 101, 102], validLeapDay.series.labels)]).valid, true);
 });
+
+
+test('portfolio annualization uses elapsed calendar time and observed interval frequency', () => {
+  const dates = ['2024-01-01', '2024-07-01', '2025-01-01'];
+  const result = analyzeEqualWeightPortfolio([
+    asset('AAPL', [100, 110, 121], dates),
+    asset('SPY', [100, 110, 121], dates),
+  ]);
+
+  assert.equal(result.valid, true);
+  assert.ok(Math.abs(result.metrics.annualizedReturnPct - 20.94) < 0.02);
+  assert.ok(Math.abs(result.metrics.annualizationPeriodsPerYear - (2 * 365.25 / 366)) < 1e-10);
+  assert.ok(result.caveats.some((item) => item.includes('unequal lengths')));
+  assert.ok(result.assetStats.every((item) => Math.abs(item.annualizedReturnPct - result.metrics.annualizedReturnPct) < 1e-10));
+});
