@@ -1,3 +1,14 @@
+function isValidCalendarDate(value) {
+  if (typeof value !== 'string' || !/^\\d{4}-\\d{2}-\\d{2}$/.test(value)) return false;
+  const [year, month, day] = value.split('-').map(Number);
+  const date = new Date(0);
+  date.setUTCHours(0, 0, 0, 0);
+  date.setUTCFullYear(year, month - 1, day);
+  return date.getUTCFullYear() === year
+    && date.getUTCMonth() === month - 1
+    && date.getUTCDate() === day;
+}
+
 function isValidAssetSeries(asset) {
   const series = asset?.series;
   return typeof asset?.symbol === 'string'
@@ -7,8 +18,7 @@ function isValidAssetSeries(asset) {
     && series.labels.length === series.values.length
     && series.values.length >= 3
     && series.values.every((value) => Number.isFinite(value) && value > 0)
-    && series.labels.every((date, index) => typeof date === 'string'
-      && /^\d{4}-\d{2}-\d{2}$/.test(date)
+    && series.labels.every((date, index) => isValidCalendarDate(date)
       && (index === 0 || date > series.labels[index - 1]));
 }
 
@@ -56,7 +66,7 @@ export function analyzeEqualWeightPortfolio(assets, { startingCapital = 100_000 
     return { valid: false, error: 'Starting capital must be a positive finite number.', assets: [] };
   }
   if (!assets.every(isValidAssetSeries)) {
-    return { valid: false, error: 'Each asset needs at least three positive prices with unique ascending ISO dates.', assets: [] };
+    return { valid: false, error: 'Each asset needs at least three positive prices with unique ascending valid ISO calendar dates.', assets: [] };
   }
 
   const symbols = assets.map((asset) => asset.symbol.trim().toUpperCase());
