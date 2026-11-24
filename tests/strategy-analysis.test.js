@@ -199,6 +199,7 @@ test('parameter sweep metrics exclude flat warm-up sessions and retain cost-awar
   assert.deepEqual(sweep[0].executionCosts, costs);
   assert.equal(sweep[0].evaluationObservations, 74);
   assert.equal(sweep[0].maxDailyLoss, Math.max(0, ...direct.dailyReturns.slice(6).map((value) => -value * 100)));
+  assert.equal(sweep[0].maxExposure, Math.max(0, ...direct.exposures.slice(5)));
 });
 
 test('parameter sweep uses the full volatility-filter warm-up when enforcing sample size', () => {
