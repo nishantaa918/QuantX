@@ -10,14 +10,19 @@ function parsePositiveNumber(value, field, date) {
 }
 
 function parseNonNegativeNumber(value, field, date, fallback = 0) {
-  if (value === undefined || value === null || value === '') return fallback;
+  if (value === undefined || value === null || (typeof value === 'string' && value.trim() === '')) return fallback;
   const number = typeof value === 'number' ? value : Number(String(value).trim());
   if (!Number.isFinite(number) || number < 0) throw new Error(`Invalid ${field} value for ${date}.`);
   return number;
 }
 
 function parseVolume(value, date) {
-  return parseNonNegativeNumber(value, 'volume', date);
+  if (value === undefined || value === null || (typeof value === 'string' && value.trim() === '')) {
+    throw new Error(`Missing volume value for ${date}.`);
+  }
+  const number = typeof value === 'number' ? value : Number(String(value).trim());
+  if (!Number.isSafeInteger(number) || number < 0) throw new Error(`Invalid volume value for ${date}.`);
+  return number;
 }
 
 function validateDate(value) {
@@ -31,7 +36,6 @@ export function normalizeAlphaVantageRows(rows, { symbol = 'AAPL', limit = 100 }
   const byDate = new Map();
   for (const row of rows) {
     if (!row || !validateDate(row.date)) throw new Error(`Invalid daily observation date: ${row?.date ?? 'missing'}.`);
-    if (byDate.has(row.date)) continue;
     const open = parsePositiveNumber(row.open, 'open', row.date);
     const high = parsePositiveNumber(row.high, 'high', row.date);
     const low = parsePositiveNumber(row.low, 'low', row.date);
@@ -47,11 +51,19 @@ export function normalizeAlphaVantageRows(rows, { symbol = 'AAPL', limit = 100 }
     if (high < low || high < Math.max(open, close) || low > Math.min(open, close)) {
       throw new Error(`Inconsistent OHLC prices for ${row.date}.`);
     }
-    byDate.set(row.date, {
+    const normalizedRow = {
       symbol, date: row.date, open, high, low, close, volume,
       adjustedClose, dividendAmount, splitCoefficient,
       source: SOURCE, frequency: FREQUENCY, adjustment: 'raw',
-    });
+    };
+    const existing = byDate.get(row.date);
+    if (existing) {
+      const sameFinancialValues = ['open', 'high', 'low', 'close', 'volume', 'adjustedClose', 'dividendAmount', 'splitCoefficient']
+        .every((field) => existing[field] === normalizedRow[field]);
+      if (!sameFinancialValues) throw new Error(`Conflicting duplicate daily observations for ${row.date}.`);
+      continue;
+    }
+    byDate.set(row.date, normalizedRow);
   }
   const observations = [...byDate.values()].sort((first, second) => first.date.localeCompare(second.date)).slice(-limit);
   if (!observations.length) throw new Error('The provider returned no daily observations.');
@@ -64,20 +76,31 @@ export function normalizeAlphaVantageDaily(payload, { symbol = 'AAPL', limit = 1
   if (providerMessage) throw new Error(String(providerMessage));
   const metadata = payload['Meta Data'] ?? {};
   const providerSymbol = metadata['2. Symbol'];
-  if (providerSymbol && providerSymbol.toUpperCase() !== symbol.toUpperCase()) throw new Error(`Provider returned ${providerSymbol} instead of ${symbol}.`);
-  const dailySeries = payload['Time Series (Daily)'] ?? payload['Time Series (Daily Adjusted)'];
+  if (providerSymbol && (typeof providerSymbol !== 'string' || providerSymbol.toUpperCase() !== symbol.toUpperCase())) {
+    throw new Error(`Provider returned an unexpected symbol instead of ${symbol}.`);
+  }
+  const adjustedSeries = payload['Time Series (Daily Adjusted)'];
+  const isAdjustedSeries = Boolean(adjustedSeries);
+  const dailySeries = adjustedSeries ?? payload['Time Series (Daily)'];
   if (!dailySeries || typeof dailySeries !== 'object' || Array.isArray(dailySeries)) throw new Error('The provider response contains no daily time series.');
-  const rows = Object.entries(dailySeries).map(([date, daily]) => ({
-    date,
-    open: daily?.['1. open'],
-    high: daily?.['2. high'],
-    low: daily?.['3. low'],
-    close: daily?.['4. close'],
-    adjustedClose: daily?.['5. adjusted close'],
-    volume: daily?.['6. volume'] ?? daily?.['5. volume'],
-    dividendAmount: daily?.['7. dividend amount'],
-    splitCoefficient: daily?.['8. split coefficient'],
-  }));
+  const rows = Object.entries(dailySeries).map(([date, daily]) => {
+    if (!daily || typeof daily !== 'object' || Array.isArray(daily)) throw new Error(`Invalid daily observation fields for ${date}.`);
+    if (isAdjustedSeries && ['5. adjusted close', '6. volume', '7. dividend amount', '8. split coefficient']
+      .some((field) => daily[field] === undefined || daily[field] === null || String(daily[field]).trim() === '')) {
+      throw new Error(`Incomplete adjusted price or corporate-action fields for ${date}.`);
+    }
+    return {
+      date,
+      open: daily['1. open'],
+      high: daily['2. high'],
+      low: daily['3. low'],
+      close: daily['4. close'],
+      adjustedClose: daily['5. adjusted close'],
+      volume: daily['6. volume'] ?? daily['5. volume'],
+      dividendAmount: daily['7. dividend amount'],
+      splitCoefficient: daily['8. split coefficient'],
+    };
+  });
   const observations = normalizeAlphaVantageRows(rows, { symbol: symbol.toUpperCase(), limit });
   const hasAdjustedClose = observations.every((observation) => Number.isFinite(observation.adjustedClose));
   return {
