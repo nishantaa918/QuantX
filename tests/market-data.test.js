@@ -102,6 +102,15 @@ test('middleware caches successful provider results and refreshes after TTL', as
 test('middleware maps provider and request errors to safe statuses', async () => {
   const limited = createAlphaVantageMiddleware({ apiKey: 'secret', fetchImpl: async () => ({ ok: true, json: async () => ({ Note: 'provider detail' }) }) });
   assert.equal((await callMiddleware(limited)).status, 429);
+
+  const planRestricted = createAlphaVantageMiddleware({
+    apiKey: 'secret',
+    fetchImpl: async () => ({ ok: true, json: async () => ({ Information: 'premium endpoint access required' }) }),
+  });
+  const restrictedResponse = await callMiddleware(planRestricted);
+  assert.equal(restrictedResponse.status, 503);
+  assert.equal(restrictedResponse.body.status, 'unavailable');
+  assert.equal(restrictedResponse.body.message.includes('premium endpoint access required'), false);
   const invalid = createAlphaVantageMiddleware({ apiKey: 'secret', fetchImpl: async () => ({ ok: true, json: async () => ({ 'Error Message': 'provider detail' }) }) });
   const failure = await callMiddleware(invalid);
   assert.equal(failure.status, 502);
