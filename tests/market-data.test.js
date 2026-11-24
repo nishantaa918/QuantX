@@ -317,3 +317,40 @@ test('adjusted endpoint schema is detected even under the standard daily contain
   delete incomplete['Time Series (Daily)']['2025-01-02']['8. split coefficient'];
   assert.throws(() => normalizeAlphaVantageDaily(incomplete), /Incomplete adjusted/);
 });
+
+
+test('NVDA split and dividend reference fixture preserves raw bars in adjusted-close mode', () => {
+  // Event dates and terms are grounded in NVIDIA's 2024 issuer disclosures:
+  // 10-for-1 split (split-adjusted trading from 2024-06-10) and a
+  // $0.01 post-split quarterly dividend with 2024-06-11 ex-dividend date.
+  // OHLC and adjusted-close values below are deliberately synthetic test values.
+  const observations = normalizeAlphaVantageRows([
+    {
+      date: '2024-06-10',
+      open: '120', high: '124', low: '118', close: '122', volume: '1000000',
+      adjustedClose: '121.5', dividendAmount: '0', splitCoefficient: '10',
+    },
+    {
+      date: '2024-06-11',
+      open: '122', high: '125', low: '121', close: '124', volume: '1100000',
+      adjustedClose: '123.4', dividendAmount: '0.01', splitCoefficient: '1',
+    },
+  ], { symbol: 'NVDA' });
+
+  const adjusted = toPriceSeries(observations, { symbol: 'NVDA', priceBasis: 'adjusted' });
+  assert.deepEqual(adjusted.values, [121.5, 123.4]);
+  assert.equal(adjusted.observations[0].splitCoefficient, 10);
+  assert.equal(adjusted.observations[1].dividendAmount, 0.01);
+
+  // Alpha Vantage documents OHLCV as raw/as-traded even on its adjusted
+  // endpoint; only adjustedClose is used for the adjusted close-price series.
+  assert.deepEqual(
+    adjusted.observations.map(({ open, high, low, volume }) => ({ open, high, low, volume })),
+    [
+      { open: 120, high: 124, low: 118, volume: 1000000 },
+      { open: 122, high: 125, low: 121, volume: 1100000 },
+    ],
+  );
+  assert.deepEqual(adjusted.observations.map(({ close }) => close), [121.5, 123.4]);
+  assert.deepEqual(adjusted.observations.map(({ rawClose }) => rawClose), [122, 124]);
+});
