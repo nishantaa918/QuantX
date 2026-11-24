@@ -167,6 +167,7 @@ export function analyzeEqualWeightPortfolio(assets, { startingCapital = 100_000 
     ]),
   ];
   if (!finiteMetrics.every(Number.isFinite)
+    || !(sharpeRatio === null || Number.isFinite(sharpeRatio))
     || !correlationMatrix.every((row) => row.values.every((value) => value === null || Number.isFinite(value)))) {
     return { valid: false, error: 'The selected price range produces non-finite portfolio statistics; choose a less extreme data range.', assets: [] };
   }
