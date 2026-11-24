@@ -95,7 +95,7 @@ async function bootApplication(storage, fetchImpl = async () => { throw new Erro
 
 function clickAction(app, action, dataset = {}) {
   const button = new ElementStub({ action, ...dataset });
-  app.getElement('#secondary-view').listeners.click({
+  return app.getElement('#secondary-view').listeners.click({
     target: { closest: (selector) => selector === '[data-action]' ? button : null },
   });
 }
@@ -207,8 +207,7 @@ test('Research Lab loads an independent index and displays matched-date diagnost
   app.nav[5].listeners.click();
   assert.equal(app.getElement('#research-benchmark-symbol').disabled, false);
   app.getElement('#research-benchmark-symbol').value = 'SPY';
-  clickAction(app, 'load-research-benchmark');
-  await new Promise((resolve) => setImmediate(resolve));
+  await clickAction(app, 'load-research-benchmark');
   const markup = app.getElement('#secondary-view').innerHTML;
   assert.match(markup, /BENCHMARK-RELATIVE RISK \/ SPY/);
   assert.match(markup, /date-matched SPY observations/);
