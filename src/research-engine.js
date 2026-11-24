@@ -76,7 +76,7 @@ export function detectMarketRegimes(series, {
  * Explains a completed long/flat backtest. Effective exposure is lagged one
  * observation because the strategy engine executes close-derived signals next session.
  */
-export function analyzeStrategyBacktest(series, backtest) {
+export function analyzeStrategyBacktest(series, backtest, benchmarkSeries = series) {
   if (!isPriceSeries(series) || !backtest?.valid || !Array.isArray(backtest.equityCurve)
     || !Array.isArray(backtest.dailyReturns) || !Array.isArray(backtest.exposures)
     || !backtest.dailyReturns.every(Number.isFinite)
@@ -103,36 +103,72 @@ export function analyzeStrategyBacktest(series, backtest) {
   const worstSession = sessions.reduce((worst, item) => item.returnPct < worst.returnPct ? item : worst, sessions[0]);
   const strategyReturn = (backtest.equityCurve.at(-1) / backtest.equityCurve[0] - 1) * 100;
   const buyAndHoldReturn = (series.values.at(-1) / series.values[0] - 1) * 100;
-  const strategyReturns = backtest.dailyReturns.slice(1);
-  const benchmarkReturns = series.values.slice(1).map((price, index) => price / series.values[index] - 1);
-  const activeReturns = strategyReturns.map((value, index) => value - benchmarkReturns[index]);
-  const strategyMean = mean(strategyReturns);
-  const benchmarkMean = mean(benchmarkReturns);
-  const activeMean = mean(activeReturns);
-  const benchmarkVariance = benchmarkReturns.reduce((sum, value) => sum + (value - benchmarkMean) ** 2, 0) / Math.max(1, benchmarkReturns.length - 1);
-  const strategyVariance = strategyReturns.reduce((sum, value) => sum + (value - strategyMean) ** 2, 0) / Math.max(1, strategyReturns.length - 1);
-  const activeVariance = activeReturns.reduce((sum, value) => sum + (value - activeMean) ** 2, 0) / Math.max(1, activeReturns.length - 1);
-  const covariance = strategyReturns.reduce((sum, value, index) => sum + (value - strategyMean) * (benchmarkReturns[index] - benchmarkMean), 0) / Math.max(1, strategyReturns.length - 1);
-  const benchmarkStandardDeviation = Math.sqrt(benchmarkVariance);
-  const strategyStandardDeviation = Math.sqrt(strategyVariance);
-  const trackingError = Math.sqrt(activeVariance) * Math.sqrt(252) * 100;
-  const beta = benchmarkVariance > 1e-16 ? covariance / benchmarkVariance : null;
-  const correlation = benchmarkStandardDeviation > 1e-12 && strategyStandardDeviation > 1e-12
+  const alignedPairs = [];
+  if (benchmarkSeries === series) {
+    for (let index = 1; index < series.values.length; index += 1) {
+      alignedPairs.push({
+        strategyReturn: backtest.dailyReturns[index],
+        benchmarkReturn: series.values[index] / series.values[index - 1] - 1,
+      });
+    }
+  } else if (isPriceSeries(benchmarkSeries)
+    && Array.isArray(series.labels) && Array.isArray(benchmarkSeries.labels)
+    && series.labels.length === series.values.length
+    && benchmarkSeries.labels.length === benchmarkSeries.values.length) {
+    const benchmarkIndexByDate = new Map(benchmarkSeries.labels.map((date, index) => [date, index]));
+    for (let index = 1; index < series.values.length; index += 1) {
+      const currentBenchmarkIndex = benchmarkIndexByDate.get(series.labels[index]);
+      const previousBenchmarkIndex = benchmarkIndexByDate.get(series.labels[index - 1]);
+      if (currentBenchmarkIndex === undefined || previousBenchmarkIndex === undefined) continue;
+      alignedPairs.push({
+        strategyReturn: backtest.dailyReturns[index],
+        benchmarkReturn: benchmarkSeries.values[currentBenchmarkIndex] / benchmarkSeries.values[previousBenchmarkIndex] - 1,
+      });
+    }
+  }
+  const strategyReturns = alignedPairs.map((item) => item.strategyReturn);
+  const benchmarkReturns = alignedPairs.map((item) => item.benchmarkReturn);
+  const enoughMatchedReturns = strategyReturns.length >= 2;
+  const strategyMean = enoughMatchedReturns ? mean(strategyReturns) : null;
+  const benchmarkMean = enoughMatchedReturns ? mean(benchmarkReturns) : null;
+  const activeReturns = enoughMatchedReturns ? strategyReturns.map((value, index) => value - benchmarkReturns[index]) : [];
+  const activeMean = enoughMatchedReturns ? mean(activeReturns) : null;
+  const benchmarkVariance = enoughMatchedReturns
+    ? benchmarkReturns.reduce((sum, value) => sum + (value - benchmarkMean) ** 2, 0) / (benchmarkReturns.length - 1)
+    : null;
+  const strategyVariance = enoughMatchedReturns
+    ? strategyReturns.reduce((sum, value) => sum + (value - strategyMean) ** 2, 0) / (strategyReturns.length - 1)
+    : null;
+  const activeVariance = enoughMatchedReturns
+    ? activeReturns.reduce((sum, value) => sum + (value - activeMean) ** 2, 0) / (activeReturns.length - 1)
+    : null;
+  const covariance = enoughMatchedReturns
+    ? strategyReturns.reduce((sum, value, index) => sum + (value - strategyMean) * (benchmarkReturns[index] - benchmarkMean), 0) / (strategyReturns.length - 1)
+    : null;
+  const benchmarkStandardDeviation = enoughMatchedReturns ? Math.sqrt(benchmarkVariance) : null;
+  const strategyStandardDeviation = enoughMatchedReturns ? Math.sqrt(strategyVariance) : null;
+  const trackingError = enoughMatchedReturns ? Math.sqrt(activeVariance) * Math.sqrt(252) * 100 : null;
+  const beta = enoughMatchedReturns && benchmarkVariance > 1e-16 ? covariance / benchmarkVariance : null;
+  const rawCorrelation = enoughMatchedReturns && benchmarkStandardDeviation > 1e-12 && strategyStandardDeviation > 1e-12
     ? covariance / (benchmarkStandardDeviation * strategyStandardDeviation)
     : null;
+  const correlation = rawCorrelation === null ? null : Math.max(-1, Math.min(1, rawCorrelation));
   const alphaDaily = beta === null ? null : strategyMean - beta * benchmarkMean;
   const benchmarkDiagnostics = {
-    valid: benchmarkVariance > 1e-16 && strategyReturns.length >= 2,
-    benchmark: 'Buy and hold of the selected price series',
+    valid: enoughMatchedReturns && benchmarkVariance > 1e-16,
+    benchmark: benchmarkSeries?.symbol ?? 'Buy and hold of the selected price series',
     observations: strategyReturns.length,
     riskFreeRateAnnualPct: 0,
     beta,
     correlation,
     annualizedAlphaPct: alphaDaily === null ? null : alphaDaily * 252 * 100,
     trackingErrorPct: trackingError,
-    informationRatio: trackingError > 1e-12 ? activeMean * 252 / (trackingError / 100) : null,
-    activeReturnPct: strategyReturn - buyAndHoldReturn,
-    meanDailyActiveReturnPct: activeMean * 100,
+    informationRatio: trackingError !== null && trackingError > 1e-12 ? activeMean * 252 / (trackingError / 100) : null,
+    activeReturnPct: enoughMatchedReturns
+      ? (strategyReturns.reduce((equity, value) => equity * (1 + value), 1)
+        - benchmarkReturns.reduce((equity, value) => equity * (1 + value), 1)) * 100
+      : null,
+    meanDailyActiveReturnPct: activeMean === null ? null : activeMean * 100,
   };
   const downsideSquares = strategyReturns.map((value) => Math.min(value, 0) ** 2);
   const downsideDeviationDaily = Math.sqrt(downsideSquares.reduce((sum, value) => sum + value, 0) / Math.max(1, downsideSquares.length));
