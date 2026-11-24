@@ -54,8 +54,8 @@ function correlation(first, second) {
 }
 
 /**
- * Builds an educational, daily-rebalanced equal-weight portfolio from saved
- * historical price series. Dates are inner-joined before returns are computed.
+ * Builds an educational, observation-rebalanced equal-weight portfolio from saved
+ * historical price series. Dates are inner-joined before interval returns are computed.
  * This is a research baseline, not an order-level execution simulation.
  */
 export function analyzeEqualWeightPortfolio(assets, { startingCapital = 100_000 } = {}) {
@@ -90,30 +90,35 @@ export function analyzeEqualWeightPortfolio(assets, { startingCapital = 100_000 
   });
   const portfolioReturns = commonDates.slice(1).map((_, index) => mean(assetReturns.map((returns) => returns[index])));
   const equityCurve = [startingCapital];
-  for (const dailyReturn of portfolioReturns) equityCurve.push(equityCurve.at(-1) * (1 + dailyReturn));
+  for (const intervalReturn of portfolioReturns) equityCurve.push(equityCurve.at(-1) * (1 + intervalReturn));
+
+  const elapsedCalendarDays = (Date.parse(`${commonDates.at(-1)}T00:00:00Z`) - Date.parse(`${commonDates[0]}T00:00:00Z`)) / 86_400_000;
+  const elapsedYears = elapsedCalendarDays / 365.25;
+  const annualizationPeriodsPerYear = portfolioReturns.length / elapsedYears;
+  const annualizationScale = Math.sqrt(annualizationPeriodsPerYear);
 
   const assetStats = assets.map((asset, index) => {
     const returns = assetReturns[index];
     const averageReturn = mean(returns);
-    const volatility = sampleStandardDeviation(returns) * Math.sqrt(252) * 100;
+    const volatility = sampleStandardDeviation(returns) * annualizationScale * 100;
     const totalReturnPct = (priceMaps[index].get(commonDates.at(-1)) / priceMaps[index].get(commonDates[0]) - 1) * 100;
-    const annualizedReturnPct = ((priceMaps[index].get(commonDates.at(-1)) / priceMaps[index].get(commonDates[0])) ** (252 / returns.length) - 1) * 100;
+    const annualizedReturnPct = ((priceMaps[index].get(commonDates.at(-1)) / priceMaps[index].get(commonDates[0])) ** (1 / elapsedYears) - 1) * 100;
     return {
       symbol: symbols[index],
       weightPct: 100 / assets.length,
       totalReturnPct,
       annualizedReturnPct,
       annualizedVolatilityPct: volatility,
-      meanDailyReturnPct: averageReturn * 100,
+      meanIntervalReturnPct: averageReturn * 100,
     };
   });
   const averageAssetVolatilityPct = mean(assetStats.map((asset) => asset.annualizedVolatilityPct));
   const portfolioMean = mean(portfolioReturns);
-  const portfolioVolatilityDaily = sampleStandardDeviation(portfolioReturns);
-  const annualizedVolatilityPct = portfolioVolatilityDaily * Math.sqrt(252) * 100;
+  const portfolioVolatilityPerInterval = sampleStandardDeviation(portfolioReturns);
+  const annualizedVolatilityPct = portfolioVolatilityPerInterval * annualizationScale * 100;
   const totalReturnPct = (equityCurve.at(-1) / startingCapital - 1) * 100;
-  const annualizedReturnPct = ((equityCurve.at(-1) / startingCapital) ** (252 / portfolioReturns.length) - 1) * 100;
-  const sharpeRatio = portfolioVolatilityDaily > 1e-12 ? portfolioMean / portfolioVolatilityDaily * Math.sqrt(252) : null;
+  const annualizedReturnPct = ((equityCurve.at(-1) / startingCapital) ** (1 / elapsedYears) - 1) * 100;
+  const sharpeRatio = portfolioVolatilityPerInterval > 1e-12 ? portfolioMean / portfolioVolatilityPerInterval * annualizationScale : null;
   const correlationMatrix = symbols.map((symbol, row) => ({
     symbol,
     values: symbols.map((_, column) => row === column ? 1 : correlation(assetReturns[row], assetReturns[column])),
@@ -121,7 +126,7 @@ export function analyzeEqualWeightPortfolio(assets, { startingCapital = 100_000 
 
   return {
     valid: true,
-    method: 'Daily-rebalanced equal-weight portfolio',
+    method: 'Observation-rebalanced equal-weight portfolio',
     symbols,
     priceBasis: [...priceBases][0],
     weights: Object.fromEntries(symbols.map((symbol) => [symbol, 1 / assets.length])),
@@ -130,13 +135,14 @@ export function analyzeEqualWeightPortfolio(assets, { startingCapital = 100_000 
     returnObservations: portfolioReturns.length,
     startingCapital,
     equityCurve,
-    dailyReturns: portfolioReturns,
+    intervalReturns: portfolioReturns,
     assetStats,
     correlationMatrix,
     metrics: {
       totalReturnPct,
       annualizedReturnPct,
       annualizedVolatilityPct,
+      annualizationPeriodsPerYear,
       sharpeRatio,
       maxDrawdownPct: maximumDrawdown(equityCurve),
       averageAssetVolatilityPct,
@@ -145,7 +151,9 @@ export function analyzeEqualWeightPortfolio(assets, { startingCapital = 100_000 
         : null,
     },
     caveats: [
-      'The portfolio is rebalanced to equal weights at every shared observation; this is a simplified daily-rebalanced baseline.',
+      'The portfolio is rebalanced to equal weights at every shared observation; returns therefore span consecutive shared dates and may cover more than one market session.',
+      'Annualized return uses elapsed calendar time. Annualized volatility and Sharpe scale interval-return statistics by the observed common-date frequency over the sample span.',
+      'When shared-date intervals have unequal lengths, annualized volatility and Sharpe are approximate; missing observations can still affect the estimates.',
       'The analysis uses only dates shared by every selected asset and may exclude valid observations outside the common window.',
       'Commissions, slippage, taxes, market impact, liquidity, cash drag, and execution delays are not modeled.',
       'Historical adjusted closes account for provider adjustment methodology, but do not by themselves reconstruct an order-level dividend-reinvestment process.',
