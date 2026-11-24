@@ -50,7 +50,7 @@ function correlation(first, second) {
   const secondStd = sampleStandardDeviation(second);
   if (firstStd <= 1e-12 || secondStd <= 1e-12) return null;
   const covariance = first.reduce((sum, value, index) => sum + (value - firstMean) * (second[index] - secondMean), 0) / (first.length - 1);
-  return covariance / (firstStd * secondStd);
+  return Math.max(-1, Math.min(1, covariance / (firstStd * secondStd)));
 }
 
 /**
@@ -92,6 +92,12 @@ export function analyzeEqualWeightPortfolio(assets, { startingCapital = 100_000 
   const equityCurve = [startingCapital];
   for (const intervalReturn of portfolioReturns) equityCurve.push(equityCurve.at(-1) * (1 + intervalReturn));
 
+  if (!assetReturns.every((returns) => returns.every(Number.isFinite))
+    || !portfolioReturns.every(Number.isFinite)
+    || !equityCurve.every(Number.isFinite)) {
+    return { valid: false, error: 'The selected price range produces non-finite returns or portfolio values; choose a less extreme data range.', assets: [] };
+  }
+
   const elapsedCalendarDays = (Date.parse(`${commonDates.at(-1)}T00:00:00Z`) - Date.parse(`${commonDates[0]}T00:00:00Z`)) / 86_400_000;
   const elapsedYears = elapsedCalendarDays / 365.25;
   const annualizationPeriodsPerYear = portfolioReturns.length / elapsedYears;
@@ -121,8 +127,27 @@ export function analyzeEqualWeightPortfolio(assets, { startingCapital = 100_000 
   const sharpeRatio = portfolioVolatilityPerInterval > 1e-12 ? portfolioMean / portfolioVolatilityPerInterval * annualizationScale : null;
   const correlationMatrix = symbols.map((symbol, row) => ({
     symbol,
-    values: symbols.map((_, column) => row === column ? 1 : correlation(assetReturns[row], assetReturns[column])),
+    values: symbols.map((_, column) => correlation(assetReturns[row], assetReturns[column])),
   }));
+
+  const finiteMetrics = [
+    totalReturnPct,
+    annualizedReturnPct,
+    annualizedVolatilityPct,
+    annualizationPeriodsPerYear,
+    maximumDrawdown(equityCurve),
+    averageAssetVolatilityPct,
+    ...assetStats.flatMap((asset) => [
+      asset.totalReturnPct,
+      asset.annualizedReturnPct,
+      asset.annualizedVolatilityPct,
+      asset.meanIntervalReturnPct,
+    ]),
+  ];
+  if (!finiteMetrics.every(Number.isFinite)
+    || !correlationMatrix.every((row) => row.values.every((value) => value === null || Number.isFinite(value)))) {
+    return { valid: false, error: 'The selected price range produces non-finite portfolio statistics; choose a less extreme data range.', assets: [] };
+  }
 
   return {
     valid: true,
@@ -157,6 +182,8 @@ export function analyzeEqualWeightPortfolio(assets, { startingCapital = 100_000 
       'The analysis uses only dates shared by every selected asset and may exclude valid observations outside the common window.',
       'Commissions, slippage, taxes, market impact, liquidity, cash drag, and execution delays are not modeled.',
       'Historical adjusted closes account for provider adjustment methodology, but do not by themselves reconstruct an order-level dividend-reinvestment process.',
+      'Maximum drawdown is measured only at the available shared closing-price observations and can miss larger intraperiod drawdowns.',
+      'Correlation is undefined when either asset has zero return volatility and is displayed as unavailable.',
       'Annualized statistics are descriptive and can be unstable on short samples; correlation can change across market regimes.',
     ],
   };
