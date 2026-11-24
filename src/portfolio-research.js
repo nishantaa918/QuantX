@@ -48,7 +48,7 @@ function correlation(first, second) {
   const secondMean = mean(second);
   const firstStd = sampleStandardDeviation(first);
   const secondStd = sampleStandardDeviation(second);
-  if (firstStd <= 1e-12 || secondStd <= 1e-12) return null;
+  if (firstStd === 0 || secondStd === 0) return null;
   const covariance = first.reduce((sum, value, index) => sum + (value - firstMean) * (second[index] - secondMean), 0) / (first.length - 1);
   const estimate = covariance / (firstStd * secondStd);
   if (Math.abs(estimate) >= 1 - 1e-12) return Math.sign(estimate);
@@ -126,7 +126,7 @@ export function analyzeEqualWeightPortfolio(assets, { startingCapital = 100_000 
   const annualizedVolatilityPct = portfolioVolatilityPerInterval * annualizationScale * 100;
   const totalReturnPct = (equityCurve.at(-1) / startingCapital - 1) * 100;
   const annualizedReturnPct = ((equityCurve.at(-1) / startingCapital) ** (1 / elapsedYears) - 1) * 100;
-  const sharpeRatio = portfolioVolatilityPerInterval > 1e-12 ? portfolioMean / portfolioVolatilityPerInterval * annualizationScale : null;
+  const sharpeRatio = portfolioVolatilityPerInterval > 0 ? portfolioMean / portfolioVolatilityPerInterval * annualizationScale : null;
   const correlationMatrix = symbols.map((symbol, row) => ({
     symbol,
     values: symbols.map((_, column) => correlation(assetReturns[row], assetReturns[column])),
@@ -173,7 +173,7 @@ export function analyzeEqualWeightPortfolio(assets, { startingCapital = 100_000 
       sharpeRatio,
       maxDrawdownPct: maximumDrawdown(equityCurve),
       averageAssetVolatilityPct,
-      diversificationBenefitPct: averageAssetVolatilityPct > 1e-12
+      diversificationBenefitPct: averageAssetVolatilityPct > 0
         ? (averageAssetVolatilityPct - annualizedVolatilityPct) / averageAssetVolatilityPct * 100
         : null,
     },
