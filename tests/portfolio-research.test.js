@@ -80,7 +80,7 @@ test('portfolio annualization uses elapsed calendar time and observed interval f
   assert.equal(result.valid, true);
   assert.ok(Math.abs(result.metrics.annualizedReturnPct - 20.94) < 0.02);
   assert.ok(Math.abs(result.metrics.annualizationPeriodsPerYear - (2 * 365.25 / 366)) < 1e-10);
-  assert.ok(result.caveats.some((item) => item.includes('unequal lengths')));
+  assert.ok(result.caveats.some((item) => item.includes('time-aware log-return diffusion estimator')));
   assert.ok(result.assetStats.every((item) => Math.abs(item.annualizedReturnPct - result.metrics.annualizedReturnPct) < 1e-10));
 });
 
@@ -138,4 +138,48 @@ test('portfolio drawdown caveat explains that only sampled closes are measured',
   ]);
   assert.equal(result.valid, true);
   assert.ok(result.caveats.some((item) => item.includes('intraperiod drawdowns')));
+});
+
+
+test('portfolio risk metrics weight each interval by its actual elapsed calendar time', () => {
+  const dates = ['2025-01-01', '2025-01-02', '2025-01-22'];
+  const prices = [100, 101, 111.1];
+  const result = analyzeEqualWeightPortfolio([
+    asset('A', prices, dates),
+    asset('B', prices, dates),
+  ]);
+
+  const intervalsInYears = [1 / 365.25, 20 / 365.25];
+  const logReturns = [Math.log(1.01), Math.log(1.1)];
+  const elapsedYears = intervalsInYears.reduce((sum, value) => sum + value, 0);
+  const drift = logReturns.reduce((sum, value) => sum + value, 0) / elapsedYears;
+  const residualSquares = logReturns.reduce((sum, value, index) => (
+    sum + (value - drift * intervalsInYears[index]) ** 2
+  ), 0);
+  const expectedVolatilityPct = Math.sqrt(residualSquares / elapsedYears) * 100;
+
+  assert.equal(result.valid, true);
+  assert.ok(Math.abs(result.metrics.annualizedVolatilityPct - expectedVolatilityPct) < 1e-10);
+  assert.ok(Math.abs(result.assetStats[0].annualizedVolatilityPct - expectedVolatilityPct) < 1e-10);
+  assert.ok(Number.isFinite(result.metrics.sharpeRatio));
+});
+
+test('constant annualized log growth across unequal intervals has zero estimated volatility', () => {
+  const dates = ['2025-01-01', '2025-01-02', '2025-01-22'];
+  const annualDrift = 0.12;
+  const firstIntervalYears = 1 / 365.25;
+  const totalYears = 21 / 365.25;
+  const prices = [
+    100,
+    100 * Math.exp(annualDrift * firstIntervalYears),
+    100 * Math.exp(annualDrift * totalYears),
+  ];
+  const result = analyzeEqualWeightPortfolio([
+    asset('A', prices, dates),
+    asset('B', prices, dates),
+  ]);
+
+  assert.equal(result.valid, true);
+  assert.equal(result.metrics.annualizedVolatilityPct, 0);
+  assert.equal(result.metrics.sharpeRatio, null);
 });

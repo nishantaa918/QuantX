@@ -33,6 +33,26 @@ function mean(values) {
   return values.reduce((sum, value) => sum + value, 0) / values.length;
 }
 
+function annualizedRiskStats(returns, dates) {
+  const intervalYears = dates.slice(1).map((date, index) => (
+    (Date.parse(`${date}T00:00:00Z`) - Date.parse(`${dates[index]}T00:00:00Z`)) / 86_400_000 / 365.25
+  ));
+  const logReturns = returns.map((value) => Math.log1p(value));
+  const elapsedYears = intervalYears.reduce((sum, value) => sum + value, 0);
+  const annualizedLogDrift = logReturns.reduce((sum, value) => sum + value, 0) / elapsedYears;
+  const residuals = logReturns.map((value, index) => value - annualizedLogDrift * intervalYears[index]);
+  const residualSquares = residuals.reduce((sum, value) => sum + value ** 2, 0);
+  const logReturnSquares = logReturns.reduce((sum, value) => sum + value ** 2, 0);
+  const varianceRate = residualSquares <= Number.EPSILON * Math.max(logReturnSquares, Number.MIN_VALUE)
+    ? 0
+    : residualSquares / elapsedYears;
+  const annualizedVolatility = Math.sqrt(varianceRate);
+  return {
+    annualizedVolatility,
+    sharpeRatio: annualizedVolatility > 0 ? annualizedLogDrift / annualizedVolatility : null,
+  };
+}
+
 function maximumDrawdown(equity) {
   let peak = equity[0];
   let maximum = 0;
@@ -103,12 +123,12 @@ export function analyzeEqualWeightPortfolio(assets, { startingCapital = 100_000 
   const elapsedCalendarDays = (Date.parse(`${commonDates.at(-1)}T00:00:00Z`) - Date.parse(`${commonDates[0]}T00:00:00Z`)) / 86_400_000;
   const elapsedYears = elapsedCalendarDays / 365.25;
   const annualizationPeriodsPerYear = portfolioReturns.length / elapsedYears;
-  const annualizationScale = Math.sqrt(annualizationPeriodsPerYear);
+  const portfolioRisk = annualizedRiskStats(portfolioReturns, commonDates);
 
   const assetStats = assets.map((asset, index) => {
     const returns = assetReturns[index];
     const averageReturn = mean(returns);
-    const volatility = sampleStandardDeviation(returns) * annualizationScale * 100;
+    const volatility = annualizedRiskStats(returns, commonDates).annualizedVolatility * 100;
     const totalReturnPct = (priceMaps[index].get(commonDates.at(-1)) / priceMaps[index].get(commonDates[0]) - 1) * 100;
     const annualizedReturnPct = ((priceMaps[index].get(commonDates.at(-1)) / priceMaps[index].get(commonDates[0])) ** (1 / elapsedYears) - 1) * 100;
     return {
@@ -123,10 +143,10 @@ export function analyzeEqualWeightPortfolio(assets, { startingCapital = 100_000 
   const averageAssetVolatilityPct = mean(assetStats.map((asset) => asset.annualizedVolatilityPct));
   const portfolioMean = mean(portfolioReturns);
   const portfolioVolatilityPerInterval = sampleStandardDeviation(portfolioReturns);
-  const annualizedVolatilityPct = portfolioVolatilityPerInterval * annualizationScale * 100;
+  const annualizedVolatilityPct = portfolioRisk.annualizedVolatility * 100;
   const totalReturnPct = (equityCurve.at(-1) / startingCapital - 1) * 100;
   const annualizedReturnPct = ((equityCurve.at(-1) / startingCapital) ** (1 / elapsedYears) - 1) * 100;
-  const sharpeRatio = portfolioVolatilityPerInterval > 0 ? portfolioMean / portfolioVolatilityPerInterval * annualizationScale : null;
+  const sharpeRatio = portfolioRisk.sharpeRatio;
   const correlationMatrix = symbols.map((symbol, row) => ({
     symbol,
     values: symbols.map((_, column) => correlation(assetReturns[row], assetReturns[column])),
@@ -147,6 +167,7 @@ export function analyzeEqualWeightPortfolio(assets, { startingCapital = 100_000 
     ]),
   ];
   if (!finiteMetrics.every(Number.isFinite)
+    || !(sharpeRatio === null || Number.isFinite(sharpeRatio))
     || !correlationMatrix.every((row) => row.values.every((value) => value === null || Number.isFinite(value)))) {
     return { valid: false, error: 'The selected price range produces non-finite portfolio statistics; choose a less extreme data range.', assets: [] };
   }
@@ -179,8 +200,8 @@ export function analyzeEqualWeightPortfolio(assets, { startingCapital = 100_000 
     },
     caveats: [
       'The portfolio is rebalanced to equal weights at every shared observation; returns therefore span consecutive shared dates and may cover more than one market session.',
-      'Annualized return uses elapsed calendar time. Annualized volatility and Sharpe scale interval-return statistics by the observed common-date frequency over the sample span.',
-      'When shared-date intervals have unequal lengths, annualized volatility and Sharpe are approximate; missing observations can still affect the estimates.',
+      'Annualized return uses elapsed calendar time. Annualized volatility and zero-risk-free-rate Sharpe use a time-aware log-return diffusion estimator: each interval is weighted by its actual elapsed calendar duration.',
+      'The time-aware risk estimator assumes log-return variance accumulates proportionally with calendar time; it is a descriptive model, not a forecast, and sparse or irregular observations can still produce unstable estimates.',
       'The analysis uses only dates shared by every selected asset and may exclude valid observations outside the common window.',
       'Commissions, slippage, taxes, market impact, liquidity, cash drag, and execution delays are not modeled.',
       'Historical adjusted closes account for provider adjustment methodology, but do not by themselves reconstruct an order-level dividend-reinvestment process.',
