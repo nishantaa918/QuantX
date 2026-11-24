@@ -5,6 +5,12 @@ const QUOTE_ROUTE = '/api/market-data/quote';
 const QUOTE_CACHE_TTL_MS = 60 * 1000;
 const CACHE_TTL_MS = 15 * 60 * 1000;
 
+function isValidIsoDate(value) {
+  if (typeof value !== 'string' || !/^\\d{4}-\\d{2}-\\d{2}$/.test(value)) return false;
+  const date = new Date(`${value}T00:00:00.000Z`);
+  return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value;
+}
+
 function sendJson(response, status, payload) {
   response.statusCode = status;
   response.setHeader('Content-Type', 'application/json; charset=utf-8');

@@ -129,6 +129,30 @@ test('quote endpoint returns a validated provider snapshot and keeps API credent
   assert.equal(JSON.stringify(result.body).includes(key), false);
 });
 
+test('quote endpoint rejects impossible calendar dates in provider snapshots', async () => {
+  const handler = createMarketDataApiHandler({
+    apiKey: 'quote-date-key',
+    fetchImpl: async () => ({
+      ok: true,
+      json: async () => ({
+        'Global Quote': {
+          '01. symbol': 'AAPL',
+          '05. price': '200',
+          '06. volume': '1000',
+          '07. latest trading day': '2026-02-30',
+          '08. previous close': '199',
+          '09. change': '1',
+          '10. change percent': '0.5025%',
+        },
+      }),
+    }),
+  });
+  const response = responseRecorder();
+  await handler({ method: 'GET', url: '/api/market-data/quote?symbol=AAPL' }, response);
+  assert.equal(response.result().status, 502);
+  assert.equal(response.result().body.status, 'unavailable');
+});
+
 test('quote endpoint caches snapshots and rejects malformed provider responses', async () => {
   let requests = 0;
   const handler = createMarketDataApiHandler({
