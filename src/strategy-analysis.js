@@ -384,7 +384,7 @@ export function runParameterSweep(
       parameters,
       metrics: calculatePerformance(evaluationEquity),
       maxDailyLoss: Math.max(0, ...backtest.dailyReturns.slice(warmupObservations).map((value) => -value * 100)),
-      maxExposure: Math.max(0, ...backtest.exposures.slice(warmupObservations)),
+      maxExposure: Math.max(0, ...backtest.exposures.slice(evaluationStartIndex)),
       evaluationObservations,
       executionCosts: backtest.executionCosts,
     });
