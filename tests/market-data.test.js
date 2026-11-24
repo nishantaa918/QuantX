@@ -222,3 +222,69 @@ test('middleware requests adjusted provider data and caches raw and adjusted req
   assert.equal(raw.body.data.requestedAdjustment, 'raw');
   assert.deepEqual(requests, ['TIME_SERIES_DAILY_ADJUSTED', 'TIME_SERIES_DAILY']);
 });
+
+
+test('normalizer rejects conflicting duplicate dates but still collapses identical duplicates', () => {
+  const identical = normalizeAlphaVantageRows(rows);
+  assert.equal(identical.length, 3);
+  const conflicting = [...rows, { ...rows[2], close: '103.5', high: '104' }];
+  assert.throws(() => normalizeAlphaVantageRows(conflicting), /Conflicting duplicate/);
+});
+
+test('normalizer rejects missing, blank, fractional and unsafe share volume values', () => {
+  for (const volume of [undefined, null, '', '   ', '1.5', '9007199254740992', '-1']) {
+    assert.throws(
+      () => normalizeAlphaVantageRows([{ ...rows[0], volume }]),
+      /volume/,
+      `volume value ${String(volume)} should be rejected`,
+    );
+  }
+  assert.equal(normalizeAlphaVantageRows([{ ...rows[0], volume: '0' }])[0].volume, 0);
+});
+
+test('adjusted daily data requires complete adjusted-close and corporate-action fields', () => {
+  const complete = {
+    'Meta Data': { '2. Symbol': 'AAPL' },
+    'Time Series (Daily Adjusted)': {
+      '2025-01-02': {
+        '1. open': '101', '2. high': '104', '3. low': '100', '4. close': '103',
+        '5. adjusted close': '101.4', '6. volume': '200',
+        '7. dividend amount': '0', '8. split coefficient': '1.0',
+      },
+      '2025-01-01': {
+        '1. open': '100', '2. high': '102', '3. low': '99', '4. close': '101',
+        '5. adjusted close': '99.5', '6. volume': '100',
+        '7. dividend amount': '0.2', '8. split coefficient': '1.0',
+      },
+    },
+  };
+  const incomplete = structuredClone(complete);
+  delete incomplete['Time Series (Daily Adjusted)']['2025-01-02']['8. split coefficient'];
+  assert.throws(() => normalizeAlphaVantageDaily(incomplete), /Incomplete adjusted/);
+});
+
+test('normalizer prefers adjusted endpoint data when both daily series are present', () => {
+  const adjusted = {
+    'Meta Data': { '2. Symbol': 'AAPL' },
+    'Time Series (Daily Adjusted)': {
+      '2025-01-02': {
+        '1. open': '101', '2. high': '104', '3. low': '100', '4. close': '103',
+        '5. adjusted close': '101.4', '6. volume': '200',
+        '7. dividend amount': '0', '8. split coefficient': '1.0',
+      },
+      '2025-01-01': {
+        '1. open': '100', '2. high': '102', '3. low': '99', '4. close': '101',
+        '5. adjusted close': '99.5', '6. volume': '100',
+        '7. dividend amount': '0', '8. split coefficient': '1.0',
+      },
+    },
+    'Time Series (Daily)': {
+      '2025-01-02': { '1. open': '101', '2. high': '104', '3. low': '100', '4. close': '103', '5. volume': '200' },
+      '2025-01-01': { '1. open': '100', '2. high': '102', '3. low': '99', '4. close': '101', '5. volume': '100' },
+    },
+  };
+  const normalized = normalizeAlphaVantageDaily(adjusted);
+  assert.equal(normalized.adjustment, 'raw_with_adjusted_close');
+  assert.equal(normalized.observations[0].adjustedClose, 99.5);
+  assert.equal(normalized.observations[0].splitCoefficient, 1);
+});
