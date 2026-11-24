@@ -80,7 +80,7 @@ test('portfolio annualization uses elapsed calendar time and observed interval f
   assert.equal(result.valid, true);
   assert.ok(Math.abs(result.metrics.annualizedReturnPct - 20.94) < 0.02);
   assert.ok(Math.abs(result.metrics.annualizationPeriodsPerYear - (2 * 365.25 / 366)) < 1e-10);
-  assert.ok(result.caveats.some((item) => item.includes('unequal lengths')));
+  assert.ok(result.caveats.some((item) => item.includes('time-aware log-return diffusion estimator')));
   assert.ok(result.assetStats.every((item) => Math.abs(item.annualizedReturnPct - result.metrics.annualizedReturnPct) < 1e-10));
 });
 
