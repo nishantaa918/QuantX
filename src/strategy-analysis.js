@@ -367,16 +367,25 @@ export function runParameterSweep(
   const values = series?.values;
   if (!finiteSeries(values) || !Number.isInteger(minimumEvaluationObservations) || minimumEvaluationObservations < 1) return combinations;
   shortWindows.forEach((shortWindow) => longWindows.forEach((longWindow) => {
-    if (shortWindow >= longWindow || values.length < longWindow + minimumEvaluationObservations) return;
+    if (shortWindow >= longWindow) return;
     const parameters = { ...baseParameters, shortWindow, longWindow, lookback: Math.max(baseParameters.lookback, longWindow) };
+    const warmupObservations = parameters.type === 'volatility-filter'
+      ? Math.max(parameters.longWindow, parameters.lookback)
+      : parameters.longWindow;
+    const evaluationObservations = values.length - warmupObservations;
+    if (evaluationObservations < minimumEvaluationObservations) return;
     const backtest = calculateStrategyBacktest(series, parameters, 100_000, executionCosts);
     if (!backtest.valid) return;
+    // A close-derived signal first earns a return on the observation after warm-up.
+    // Start metrics at the preceding equity point so warm-up flat returns are excluded.
+    const evaluationStartIndex = warmupObservations - 1;
+    const evaluationEquity = backtest.equityCurve.slice(evaluationStartIndex);
     combinations.push({
       parameters,
-      metrics: backtest.metrics,
-      maxDailyLoss: backtest.maxDailyLoss,
-      maxExposure: backtest.maxExposure,
-      evaluationObservations: values.length - longWindow,
+      metrics: calculatePerformance(evaluationEquity),
+      maxDailyLoss: Math.max(0, ...backtest.dailyReturns.slice(warmupObservations).map((value) => -value * 100)),
+      maxExposure: Math.max(0, ...backtest.exposures.slice(warmupObservations)),
+      evaluationObservations,
       executionCosts: backtest.executionCosts,
     });
   }));
