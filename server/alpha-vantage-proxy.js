@@ -61,8 +61,11 @@ export function createAlphaVantageMiddleware({
         const upstream = await fetchImpl(providerUrl, { signal: AbortSignal.timeout(10_000) });
         if (!upstream.ok) return sendJson(response, 502, { status: 'error', message: `Alpha Vantage returned HTTP ${upstream.status}.` });
         const providerPayload = await upstream.json();
-        if (providerPayload?.Note || providerPayload?.Information) {
-          return sendJson(response, 429, { status: 'rate_limited', message: 'The quote provider rate limit was reached or this quote is unavailable for the current provider plan.' });
+        if (providerPayload?.Note) {
+          return sendJson(response, 429, { status: 'rate_limited', message: 'The quote provider rate limit was reached.' });
+        }
+        if (providerPayload?.Information) {
+          return sendJson(response, 503, { status: 'unavailable', message: 'The quote endpoint is unavailable for the current provider plan or configuration.' });
         }
         if (providerPayload?.['Error Message']) return sendJson(response, 502, { status: 'error', message: 'Alpha Vantage rejected the quote request.' });
         const quote = providerPayload?.['Global Quote'];
@@ -116,8 +119,11 @@ export function createAlphaVantageMiddleware({
       const upstream = await fetchImpl(providerUrl, { signal: AbortSignal.timeout(10_000) });
       if (!upstream.ok) return sendJson(response, 502, { status: 'error', message: `Alpha Vantage returned HTTP ${upstream.status}.` });
       const providerPayload = await upstream.json();
-      if (providerPayload?.Note || providerPayload?.Information) {
-        return sendJson(response, 429, { status: 'rate_limited', message: 'Alpha Vantage rate limit reached or this endpoint is unavailable for the current provider plan.' });
+      if (providerPayload?.Note) {
+        return sendJson(response, 429, { status: 'rate_limited', message: 'Alpha Vantage rate limit reached.' });
+      }
+      if (providerPayload?.Information) {
+        return sendJson(response, 503, { status: 'unavailable', message: 'This Alpha Vantage endpoint is unavailable for the current provider plan or configuration.' });
       }
       if (providerPayload?.['Error Message']) {
         return sendJson(response, 502, { status: 'error', message: 'Alpha Vantage rejected the daily-data request.' });
