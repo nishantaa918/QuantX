@@ -90,7 +90,7 @@ export function analyzeEqualWeightPortfolio(assets, { startingCapital = 100_000 
   });
   const portfolioReturns = commonDates.slice(1).map((_, index) => mean(assetReturns.map((returns) => returns[index])));
   const equityCurve = [startingCapital];
-  for (const dailyReturn of portfolioReturns) equityCurve.push(equityCurve.at(-1) * (1 + dailyReturn));
+  for (const intervalReturn of portfolioReturns) equityCurve.push(equityCurve.at(-1) * (1 + intervalReturn));
 
   const elapsedCalendarDays = (Date.parse(`${commonDates.at(-1)}T00:00:00Z`) - Date.parse(`${commonDates[0]}T00:00:00Z`)) / 86_400_000;
   const elapsedYears = elapsedCalendarDays / 365.25;
@@ -109,16 +109,16 @@ export function analyzeEqualWeightPortfolio(assets, { startingCapital = 100_000 
       totalReturnPct,
       annualizedReturnPct,
       annualizedVolatilityPct: volatility,
-      meanDailyReturnPct: averageReturn * 100,
+      meanIntervalReturnPct: averageReturn * 100,
     };
   });
   const averageAssetVolatilityPct = mean(assetStats.map((asset) => asset.annualizedVolatilityPct));
   const portfolioMean = mean(portfolioReturns);
-  const portfolioVolatilityDaily = sampleStandardDeviation(portfolioReturns);
-  const annualizedVolatilityPct = portfolioVolatilityDaily * annualizationScale * 100;
+  const portfolioVolatilityPerInterval = sampleStandardDeviation(portfolioReturns);
+  const annualizedVolatilityPct = portfolioVolatilityPerInterval * annualizationScale * 100;
   const totalReturnPct = (equityCurve.at(-1) / startingCapital - 1) * 100;
   const annualizedReturnPct = ((equityCurve.at(-1) / startingCapital) ** (1 / elapsedYears) - 1) * 100;
-  const sharpeRatio = portfolioVolatilityDaily > 1e-12 ? portfolioMean / portfolioVolatilityDaily * annualizationScale : null;
+  const sharpeRatio = portfolioVolatilityPerInterval > 1e-12 ? portfolioMean / portfolioVolatilityPerInterval * annualizationScale : null;
   const correlationMatrix = symbols.map((symbol, row) => ({
     symbol,
     values: symbols.map((_, column) => row === column ? 1 : correlation(assetReturns[row], assetReturns[column])),
@@ -126,7 +126,7 @@ export function analyzeEqualWeightPortfolio(assets, { startingCapital = 100_000 
 
   return {
     valid: true,
-    method: 'Daily-rebalanced equal-weight portfolio',
+    method: 'Observation-rebalanced equal-weight portfolio',
     symbols,
     priceBasis: [...priceBases][0],
     weights: Object.fromEntries(symbols.map((symbol) => [symbol, 1 / assets.length])),
@@ -135,7 +135,7 @@ export function analyzeEqualWeightPortfolio(assets, { startingCapital = 100_000 
     returnObservations: portfolioReturns.length,
     startingCapital,
     equityCurve,
-    dailyReturns: portfolioReturns,
+    intervalReturns: portfolioReturns,
     assetStats,
     correlationMatrix,
     metrics: {
