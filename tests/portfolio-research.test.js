@@ -83,3 +83,59 @@ test('portfolio annualization uses elapsed calendar time and observed interval f
   assert.ok(result.caveats.some((item) => item.includes('unequal lengths')));
   assert.ok(result.assetStats.every((item) => Math.abs(item.annualizedReturnPct - result.metrics.annualizedReturnPct) < 1e-10));
 });
+
+
+test('constant-return assets have undefined correlations rather than misleading perfect correlation', () => {
+  const dates = ['2025-01-01', '2025-01-02', '2025-01-03'];
+  const result = analyzeEqualWeightPortfolio([
+    asset('FLAT', [100, 100, 100], dates),
+    asset('ALSOFLAT', [50, 50, 50], dates),
+  ]);
+
+  assert.equal(result.valid, true);
+  assert.equal(result.correlationMatrix[0].values[0], null);
+  assert.equal(result.correlationMatrix[1].values[1], null);
+  assert.equal(result.correlationMatrix[0].values[1], null);
+  assert.equal(result.metrics.sharpeRatio, null);
+  assert.equal(result.metrics.diversificationBenefitPct, null);
+});
+
+test('correlation is unavailable when one asset has zero return volatility', () => {
+  const dates = ['2025-01-01', '2025-01-02', '2025-01-03'];
+  const result = analyzeEqualWeightPortfolio([
+    asset('FLAT', [100, 100, 100], dates),
+    asset('MOVING', [100, 110, 105], dates),
+  ]);
+
+  assert.equal(result.valid, true);
+  assert.equal(result.correlationMatrix[0].values[0], null);
+  assert.equal(result.correlationMatrix[0].values[1], null);
+  assert.equal(result.correlationMatrix[1].values[0], null);
+  assert.ok(result.caveats.some((item) => item.includes('zero return volatility')));
+});
+
+test('portfolio analysis rejects price ratios and equity curves that overflow', () => {
+  const dates = ['2025-01-01', '2025-01-02', '2025-01-03'];
+  const overflowingPrices = analyzeEqualWeightPortfolio([
+    asset('HUGE', [1e-308, 1e308, 1e308], dates),
+    asset('STABLE', [100, 100, 100], dates),
+  ]);
+  assert.equal(overflowingPrices.valid, false);
+  assert.match(overflowingPrices.error, /non-finite/);
+
+  const overflowingCapital = analyzeEqualWeightPortfolio([
+    asset('GROWTH', [100, 200, 300], dates),
+    asset('STEADY', [100, 100, 100], dates),
+  ], { startingCapital: Number.MAX_VALUE });
+  assert.equal(overflowingCapital.valid, false);
+  assert.match(overflowingCapital.error, /non-finite/);
+});
+
+test('portfolio drawdown caveat explains that only sampled closes are measured', () => {
+  const result = analyzeEqualWeightPortfolio([
+    asset('AAPL', [100, 110, 105]),
+    asset('SPY', [100, 105, 102]),
+  ]);
+  assert.equal(result.valid, true);
+  assert.ok(result.caveats.some((item) => item.includes('intraperiod drawdowns')));
+});
