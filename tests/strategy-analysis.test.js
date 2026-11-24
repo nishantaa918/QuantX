@@ -186,7 +186,7 @@ test('empty or invalid inputs do not produce numeric risk results', () => {
   assert.equal(invalidThresholds.checks.some((check) => check.key), false);
 });
 
-test('heatmap parameter results equal the underlying cost-aware parameter-sweep backtests', () => {
+test('parameter sweep metrics exclude flat warm-up sessions and retain cost-aware OOS returns', () => {
   const series = risingSeries();
   const parameters = { ...activeStrategy, lookback: 20 };
   const costs = { commissionBps: 2, slippageBps: 8 };
@@ -194,9 +194,23 @@ test('heatmap parameter results equal the underlying cost-aware parameter-sweep 
   const direct = calculateStrategyBacktest(series, { ...parameters, shortWindow: 2, longWindow: 6 }, 100_000, costs);
 
   assert.equal(sweep.length, 1);
-  assert.deepEqual(sweep[0].metrics, direct.metrics);
+  assert.deepEqual(sweep[0].metrics, calculatePerformance(direct.equityCurve.slice(5)));
+  assert.notDeepEqual(sweep[0].metrics, direct.metrics);
   assert.deepEqual(sweep[0].executionCosts, costs);
   assert.equal(sweep[0].evaluationObservations, 74);
+  assert.equal(sweep[0].maxDailyLoss, Math.max(0, ...direct.dailyReturns.slice(6).map((value) => -value * 100)));
+  assert.equal(sweep[0].maxExposure, Math.max(0, ...direct.exposures.slice(5)));
+});
+
+test('parameter sweep uses the full volatility-filter warm-up when enforcing sample size', () => {
+  const series = risingSeries(35);
+  const parameters = { ...activeStrategy, type: 'volatility-filter', lookback: 30 };
+  const insufficient = runParameterSweep(series, parameters, [2], [6]);
+  const sufficient = runParameterSweep(risingSeries(60), parameters, [2], [6]);
+
+  assert.equal(insufficient.length, 0);
+  assert.equal(sufficient.length, 1);
+  assert.equal(sufficient[0].evaluationObservations, 30);
 });
 
 test('heatmap suppresses combinations without enough post-warm-up observations', () => {
