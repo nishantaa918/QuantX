@@ -931,7 +931,6 @@ async function loadResearchBenchmark() {
           throw new Error(`No valid ${symbol} daily observations were returned.`);
         }
         benchmarkSeries = toPriceSeries(payload.data.observations, { symbol });
-        if (!benchmarkSeries.valid) throw new Error(benchmarkSeries.error || `Invalid ${symbol} observations.`);
         researchBenchmarkCache.set(cacheKey, benchmarkSeries);
       }
     }
