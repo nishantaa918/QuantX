@@ -173,3 +173,79 @@ test('quote endpoint caches snapshots and rejects malformed provider responses',
   await noKey({ method: 'GET', url: '/api/market-data/quote?symbol=AAPL' }, unavailable);
   assert.equal(unavailable.result().status, 503);
 });
+
+
+test('quote endpoint rejects blank required numeric fields instead of treating them as zero', async () => {
+  const baseQuote = {
+    '01. symbol': 'AAPL',
+    '05. price': '100.00',
+    '06. volume': '1000',
+    '07. latest trading day': '2026-11-23',
+    '08. previous close': '99.00',
+    '09. change': '1.00',
+    '10. change percent': '1.0101%',
+  };
+  for (const field of ['06. volume', '09. change', '10. change percent']) {
+    const quote = { ...baseQuote, [field]: '' };
+    const handler = createMarketDataApiHandler({
+      apiKey: 'quote-integrity-key',
+      fetchImpl: async () => ({ ok: true, json: async () => ({ 'Global Quote': quote }) }),
+    });
+    const response = responseRecorder();
+    await handler({ method: 'GET', url: '/api/market-data/quote?symbol=AAPL' }, response);
+    assert.equal(response.result().status, 502, `blank ${field} should be rejected`);
+    assert.equal(response.result().body.status, 'unavailable');
+  }
+});
+
+test('quote endpoint rejects internally inconsistent price change and percentage fields', async () => {
+  const baseQuote = {
+    '01. symbol': 'AAPL',
+    '05. price': '100.00',
+    '06. volume': '1000',
+    '07. latest trading day': '2026-11-23',
+    '08. previous close': '99.00',
+    '09. change': '1.00',
+    '10. change percent': '1.0101%',
+  };
+  for (const patch of [
+    { '09. change': '2.00' },
+    { '10. change percent': '2.0202%' },
+  ]) {
+    const quote = { ...baseQuote, ...patch };
+    const handler = createMarketDataApiHandler({
+      apiKey: 'quote-math-key',
+      fetchImpl: async () => ({ ok: true, json: async () => ({ 'Global Quote': quote }) }),
+    });
+    const response = responseRecorder();
+    await handler({ method: 'GET', url: '/api/market-data/quote?symbol=AAPL' }, response);
+    assert.equal(response.result().status, 502);
+    assert.equal(response.result().body.status, 'unavailable');
+  }
+});
+
+test('quote endpoint accepts valid negative changes and zero volume', async () => {
+  const handler = createMarketDataApiHandler({
+    apiKey: 'quote-negative-key',
+    fetchImpl: async () => ({
+      ok: true,
+      json: async () => ({
+        'Global Quote': {
+          '01. symbol': 'AAPL',
+          '05. price': '99.50',
+          '06. volume': '0',
+          '07. latest trading day': '2026-11-23',
+          '08. previous close': '100.00',
+          '09. change': '-0.50',
+          '10. change percent': '-0.5000%',
+        },
+      }),
+    }),
+  });
+  const response = responseRecorder();
+  await handler({ method: 'GET', url: '/api/market-data/quote?symbol=AAPL' }, response);
+  assert.equal(response.result().status, 200);
+  assert.equal(response.result().body.data.change, -0.5);
+  assert.equal(response.result().body.data.changePercent, -0.5);
+  assert.equal(response.result().body.data.volume, 0);
+});
