@@ -58,3 +58,13 @@ test('portfolio analysis validates sample size, dates, values, asset count and c
   assert.equal(analyzeEqualWeightPortfolio([asset('AAPL', [100, 101, 102]), asset('SPY', [100, 101, 102])], { startingCapital: 0 }).valid, false);
   assert.equal(analyzeEqualWeightPortfolio([asset('AAPL', [100, 101, 102], ['2025-01-01', '2025-01-01', '2025-01-03']), asset('SPY', [100, 101, 102])]).valid, false);
 });
+
+test('portfolio analysis rejects impossible calendar dates and accepts valid leap days', () => {
+  const impossible = asset('AAPL', [100, 101, 102], ['2025-02-28', '2025-02-30', '2025-03-02']);
+  const nonLeapDay = asset('MSFT', [100, 101, 102], ['2025-02-28', '2025-02-29', '2025-03-02']);
+  const validLeapDay = asset('SPY', [100, 101, 102], ['2024-02-28', '2024-02-29', '2024-03-01']);
+
+  assert.equal(analyzeEqualWeightPortfolio([impossible, asset('QQQ', [100, 101, 102], impossible.series.labels)]).valid, false);
+  assert.equal(analyzeEqualWeightPortfolio([nonLeapDay, asset('QQQ', [100, 101, 102], nonLeapDay.series.labels)]).valid, false);
+  assert.equal(analyzeEqualWeightPortfolio([validLeapDay, asset('QQQ', [100, 101, 102], validLeapDay.series.labels)]).valid, true);
+});
