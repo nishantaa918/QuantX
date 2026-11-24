@@ -238,7 +238,8 @@ test('Research Lab exposes saved cross-asset analysis and renders equal-weight r
   assert.match(panel, /Analyze diversification/);
   clickAction(app, 'run-portfolio-research');
   assert.match(app.getElement('#portfolio-research-results').innerHTML, /PORTFOLIO RETURN/);
-  assert.match(app.getElement('#portfolio-research-results').innerHTML, /DAILY RETURN CORRELATION/);
+  assert.match(app.getElement('#portfolio-research-results').innerHTML, /INTERVAL RETURN CORRELATION/);
+  assert.match(app.getElement('#portfolio-research-results').innerHTML, /2 return intervals/);
 });
 
 test('a malformed saved historical experiment does not discard other valid saved experiments', async () => {
