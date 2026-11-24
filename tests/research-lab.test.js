@@ -208,7 +208,7 @@ test('Research Lab loads an independent index and displays matched-date diagnost
   assert.equal(app.getElement('#research-benchmark-symbol').disabled, false);
   app.getElement('#research-benchmark-symbol').value = 'SPY';
   await clickAction(app, 'load-research-benchmark');
-  const markup = app.getElement('#secondary-view').innerHTML;
+  const markup = app.getElement('#research-intelligence').outerHTML;
   assert.match(markup, /BENCHMARK-RELATIVE RISK \/ SPY/);
   assert.match(markup, /date-matched SPY observations/);
   assert.match(markup, /Matched active return/);
