@@ -288,3 +288,32 @@ test('normalizer prefers adjusted endpoint data when both daily series are prese
   assert.equal(normalized.observations[0].adjustedClose, 99.5);
   assert.equal(normalized.observations[0].splitCoefficient, 1);
 });
+
+
+test('adjusted endpoint schema is detected even under the standard daily container label', () => {
+  const adjustedDaily = {
+    'Meta Data': { '2. Symbol': 'AAPL' },
+    'Time Series (Daily)': {
+      '2025-01-02': {
+        '1. open': '50', '2. high': '52', '3. low': '49', '4. close': '51',
+        '5. adjusted close': '50.5', '6. volume': '200',
+        '7. dividend amount': '0.25', '8. split coefficient': '1.0',
+      },
+      '2025-01-01': {
+        '1. open': '100', '2. high': '102', '3. low': '99', '4. close': '101',
+        '5. adjusted close': '99.5', '6. volume': '100',
+        '7. dividend amount': '0', '8. split coefficient': '2.0',
+      },
+    },
+  };
+
+  const normalized = normalizeAlphaVantageDaily(adjustedDaily);
+  assert.equal(normalized.adjustment, 'raw_with_adjusted_close');
+  assert.equal(normalized.observations[0].adjustedClose, 99.5);
+  assert.equal(normalized.observations[0].splitCoefficient, 2);
+  assert.equal(normalized.observations[1].dividendAmount, 0.25);
+
+  const incomplete = structuredClone(adjustedDaily);
+  delete incomplete['Time Series (Daily)']['2025-01-02']['8. split coefficient'];
+  assert.throws(() => normalizeAlphaVantageDaily(incomplete), /Incomplete adjusted/);
+});
