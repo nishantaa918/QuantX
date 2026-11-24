@@ -6,7 +6,7 @@ const QUOTE_CACHE_TTL_MS = 60 * 1000;
 const CACHE_TTL_MS = 15 * 60 * 1000;
 
 function isValidIsoDate(value) {
-  if (typeof value !== 'string' || !/^\\d{4}-\\d{2}-\\d{2}$/.test(value)) return false;
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
   const date = new Date(`${value}T00:00:00.000Z`);
   return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value;
 }
@@ -67,7 +67,7 @@ export function createAlphaVantageMiddleware({
         const changePercent = Number(String(quote?.['10. change percent'] ?? '').replace('%', ''));
         const volume = Number(quote?.['06. volume']);
         const latestTradingDay = quote?.['07. latest trading day'];
-        if (providerSymbol !== symbol || !Number.isFinite(price) || price <= 0 || !Number.isFinite(previousClose) || previousClose <= 0 || !Number.isFinite(change) || !Number.isFinite(changePercent) || !Number.isFinite(volume) || volume < 0 || !/^\d{4}-\d{2}-\d{2}$/.test(latestTradingDay ?? '')) {
+        if (providerSymbol !== symbol || !Number.isFinite(price) || price <= 0 || !Number.isFinite(previousClose) || previousClose <= 0 || !Number.isFinite(change) || !Number.isFinite(changePercent) || !Number.isFinite(volume) || volume < 0 || !isValidIsoDate(latestTradingDay)) {
           return sendJson(response, 502, { status: 'unavailable', message: 'The provider returned no complete quote snapshot for this symbol.' });
         }
         const payload = {
