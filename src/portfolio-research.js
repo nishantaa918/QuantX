@@ -50,7 +50,9 @@ function correlation(first, second) {
   const secondStd = sampleStandardDeviation(second);
   if (firstStd <= 1e-12 || secondStd <= 1e-12) return null;
   const covariance = first.reduce((sum, value, index) => sum + (value - firstMean) * (second[index] - secondMean), 0) / (first.length - 1);
-  return Math.max(-1, Math.min(1, covariance / (firstStd * secondStd)));
+  const estimate = covariance / (firstStd * secondStd);
+  if (Math.abs(estimate) >= 1 - 1e-12) return Math.sign(estimate);
+  return Math.max(-1, Math.min(1, estimate));
 }
 
 /**
