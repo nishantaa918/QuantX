@@ -11,6 +11,12 @@ function isValidIsoDate(value) {
   return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value;
 }
 
+function parseQuoteNumber(value) {
+  if ((typeof value !== 'string' && typeof value !== 'number') || String(value).trim() === '') return Number.NaN;
+  const normalized = typeof value === 'string' ? value.trim().replace(/%$/, '') : value;
+  return Number(normalized);
+}
+
 function sendJson(response, status, payload) {
   response.statusCode = status;
   response.setHeader('Content-Type', 'application/json; charset=utf-8');
@@ -61,13 +67,25 @@ export function createAlphaVantageMiddleware({
         if (providerPayload?.['Error Message']) return sendJson(response, 502, { status: 'error', message: 'Alpha Vantage rejected the quote request.' });
         const quote = providerPayload?.['Global Quote'];
         const providerSymbol = quote?.['01. symbol']?.toUpperCase();
-        const price = Number(quote?.['05. price']);
-        const previousClose = Number(quote?.['08. previous close']);
-        const change = Number(quote?.['09. change']);
-        const changePercent = Number(String(quote?.['10. change percent'] ?? '').replace('%', ''));
-        const volume = Number(quote?.['06. volume']);
+        const price = parseQuoteNumber(quote?.['05. price']);
+        const previousClose = parseQuoteNumber(quote?.['08. previous close']);
+        const change = parseQuoteNumber(quote?.['09. change']);
+        const changePercent = parseQuoteNumber(quote?.['10. change percent']);
+        const volume = parseQuoteNumber(quote?.['06. volume']);
         const latestTradingDay = quote?.['07. latest trading day'];
-        if (providerSymbol !== symbol || !Number.isFinite(price) || price <= 0 || !Number.isFinite(previousClose) || previousClose <= 0 || !Number.isFinite(change) || !Number.isFinite(changePercent) || !Number.isFinite(volume) || volume < 0 || !isValidIsoDate(latestTradingDay)) {
+        const expectedChange = price - previousClose;
+        const expectedChangePercent = (change / previousClose) * 100;
+        const quoteFieldsValid = providerSymbol === symbol
+          && Number.isFinite(price) && price > 0
+          && Number.isFinite(previousClose) && previousClose > 0
+          && Number.isFinite(change)
+          && Number.isFinite(changePercent)
+          && Number.isSafeInteger(volume) && volume >= 0
+          && isValidIsoDate(latestTradingDay);
+        const quoteMathValid = quoteFieldsValid
+          && Math.abs(change - expectedChange) <= 0.011
+          && Math.abs(changePercent - expectedChangePercent) <= 0.02;
+        if (!quoteMathValid) {
           return sendJson(response, 502, { status: 'unavailable', message: 'The provider returned no complete quote snapshot for this symbol.' });
         }
         const payload = {
