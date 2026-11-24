@@ -811,7 +811,7 @@ function renderPortfolioResearchPanel() {
   const assets = getPortfolioResearchAssets();
   const symbols = assets.map((asset) => asset.symbol);
   return `<section class="panel page-panel portfolio-research-panel" id="portfolio-research-panel">
-    <div class="panel-heading"><div><p class="section-kicker">CROSS-ASSET RESEARCH</p><h2>Portfolio diversification lab</h2><p class="panel-subtitle">Compare saved historical assets on their shared dates using a equal-weight baseline rebalanced at each shared observation.</p></div><span class="sim-tag">RESEARCH ONLY</span></div>
+    <div class="panel-heading"><div><p class="section-kicker">CROSS-ASSET RESEARCH</p><h2>Portfolio diversification lab</h2><p class="panel-subtitle">Compare saved historical assets on their shared dates using an equal-weight baseline rebalanced at each shared observation.</p></div><span class="sim-tag">RESEARCH ONLY</span></div>
     <div class="portfolio-research-controls"><div><p class="attribute-label">ELIGIBLE SAVED ASSETS</p><strong>${symbols.length ? symbols.map(escapeHTML).join(' / ') : 'None yet'}</strong><p class="table-note">Uses the latest saved historical backtest per ticker, up to 10 assets, with a common price basis. Save at least two historical runs for different tickers.</p></div><button class="primary-button" type="button" data-action="run-portfolio-research" ${symbols.length < 2 ? 'disabled' : ''}>Analyze diversification</button></div>
     <div id="portfolio-research-results"><p class="empty-state">${symbols.length < 2 ? 'Two or more saved historical tickers are required.' : 'Run the analysis to calculate aligned returns and a correlation matrix.'}</p></div>
   </section>`;
