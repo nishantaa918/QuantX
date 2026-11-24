@@ -113,7 +113,17 @@ function loadStoredObject(key, defaults) {
 function loadExperiments() {
   try {
     const stored = JSON.parse(localStorage.getItem(STORAGE_KEY));
-    return Array.isArray(stored) ? stored.map(hydrateExperiment).filter(Boolean).slice(0, 12) : [];
+    if (!Array.isArray(stored)) return [];
+    const hydrated = [];
+    for (const experiment of stored) {
+      try {
+        const restored = hydrateExperiment(experiment);
+        if (restored) hydrated.push(restored);
+      } catch {
+        // Ignore one malformed saved experiment without losing the other valid runs.
+      }
+    }
+    return hydrated.slice(0, 12);
   } catch {
     return [];
   }

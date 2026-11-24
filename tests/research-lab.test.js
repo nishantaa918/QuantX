@@ -240,3 +240,30 @@ test('Research Lab exposes saved cross-asset analysis and renders equal-weight r
   assert.match(app.getElement('#portfolio-research-results').innerHTML, /PORTFOLIO RETURN/);
   assert.match(app.getElement('#portfolio-research-results').innerHTML, /DAILY RETURN CORRELATION/);
 });
+
+test('a malformed saved historical experiment does not discard other valid saved experiments', async () => {
+  const storage = new Map();
+  storage.set('quantx.midnight.experiments', JSON.stringify([
+    {
+      id: 'broken-historical',
+      kind: 'backtest',
+      dataSource: 'historical',
+      symbol: 'AAPL',
+      series: {
+        priceBasis: 'adjusted',
+        observations: [{ date: 'not-a-date', close: 100, adjustedClose: 99 }],
+      },
+    },
+    {
+      id: 'valid-synthetic',
+      kind: 'simulation',
+      seed: 42,
+      period: '1M',
+      timestamp: 1_790_000_000_000,
+    },
+  ]));
+
+  const app = await bootApplication(storage);
+  const restored = vm.runInContext('experiments.map((experiment) => experiment.id)', app.context);
+  assert.deepEqual(JSON.parse(JSON.stringify(restored)), ['valid-synthetic']);
+});
