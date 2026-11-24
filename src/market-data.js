@@ -80,9 +80,15 @@ export function normalizeAlphaVantageDaily(payload, { symbol = 'AAPL', limit = 1
     throw new Error(`Provider returned an unexpected symbol instead of ${symbol}.`);
   }
   const adjustedSeries = payload['Time Series (Daily Adjusted)'];
-  const isAdjustedSeries = Boolean(adjustedSeries);
   const dailySeries = adjustedSeries ?? payload['Time Series (Daily)'];
   if (!dailySeries || typeof dailySeries !== 'object' || Array.isArray(dailySeries)) throw new Error('The provider response contains no daily time series.');
+  // Alpha Vantage's adjusted endpoint may use either container label. Detect
+  // adjusted payloads from their schema too, not only from the container name.
+  const hasAdjustedFields = Object.values(dailySeries).some((daily) => daily
+    && typeof daily === 'object'
+    && ['5. adjusted close', '7. dividend amount', '8. split coefficient']
+      .some((field) => Object.hasOwn(daily, field)));
+  const isAdjustedSeries = Boolean(adjustedSeries) || hasAdjustedFields;
   const rows = Object.entries(dailySeries).map(([date, daily]) => {
     if (!daily || typeof daily !== 'object' || Array.isArray(daily)) throw new Error(`Invalid daily observation fields for ${date}.`);
     if (isAdjustedSeries && ['5. adjusted close', '6. volume', '7. dividend amount', '8. split coefficient']
