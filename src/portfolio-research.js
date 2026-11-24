@@ -54,8 +54,8 @@ function correlation(first, second) {
 }
 
 /**
- * Builds an educational, daily-rebalanced equal-weight portfolio from saved
- * historical price series. Dates are inner-joined before returns are computed.
+ * Builds an educational, observation-rebalanced equal-weight portfolio from saved
+ * historical price series. Dates are inner-joined before interval returns are computed.
  * This is a research baseline, not an order-level execution simulation.
  */
 export function analyzeEqualWeightPortfolio(assets, { startingCapital = 100_000 } = {}) {
