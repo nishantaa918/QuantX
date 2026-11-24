@@ -78,7 +78,6 @@ export function runWalkForwardValidation(series, {
   const outOfSampleReturns = [];
   const benchmarkReturns = [];
   let strategyCapital = startingCapital;
-  let benchmarkCapital = startingCapital;
   let skippedFolds = 0;
 
   for (let trainStart = 0; trainStart + trainWindow + testWindow <= series.values.length; trainStart += step) {
@@ -118,8 +117,18 @@ export function runWalkForwardValidation(series, {
     }
     const foldEquity = compoundReturns(foldReturns, startingCapital);
     const foldBenchmarkEquity = compoundReturns(foldBenchmarkReturns, startingCapital);
-    const foldCosts = forwardBacktest.transactionCostsUSD.slice(trainEnd, testEnd)
-      .reduce((sum, value) => sum + value, 0);
+    // Scale test-window transaction costs to the actual stitched OOS
+    // portfolio equity, not the separate full-prefix training backtest equity.
+    let foldCosts = 0;
+    let foldStrategyCapital = strategyCapital;
+    for (let index = trainEnd; index < testEnd; index += 1) {
+      const prefixEquity = forwardBacktest.equityCurve[index - 1] ?? startingCapital;
+      const costFraction = prefixEquity > 0
+        ? forwardBacktest.transactionCostsUSD[index] / prefixEquity
+        : 0;
+      foldCosts += foldStrategyCapital * costFraction;
+      foldStrategyCapital *= 1 + forwardBacktest.dailyReturns[index];
+    }
 
     folds.push({
       number: folds.length + 1,
@@ -142,7 +151,6 @@ export function runWalkForwardValidation(series, {
       outOfSampleReturns.push(dailyReturn);
     }
     for (const dailyReturn of foldBenchmarkReturns) {
-      benchmarkCapital *= 1 + dailyReturn;
       benchmarkReturns.push(dailyReturn);
     }
   }

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { runWalkForwardValidation } from '../src/walk-forward.js';
+import { calculateStrategyBacktest } from '../src/strategy-analysis.js';
 
 function makeSeries(length = 140) {
   const points = Array.from({ length }, (_, index) => {
@@ -55,4 +56,45 @@ test('walk-forward validation rejects invalid candidate grids and reports skippe
   });
   assert.equal(noTrades.valid, false);
   assert.equal(noTrades.skippedFolds, 4);
+});
+
+
+test('walk-forward transaction costs are scaled to stitched out-of-sample capital', () => {
+  const series = makeSeries(140);
+  const executionCosts = { commissionBps: 2, slippageBps: 8 };
+  const result = runWalkForwardValidation(series, {
+    trainWindow: 60,
+    testWindow: 20,
+    step: 20,
+    shortWindows: [3, 5],
+    longWindows: [15, 20],
+    executionCosts,
+  });
+  assert.equal(result.valid, true);
+
+  let stitchedCapital = 100_000;
+  let expectedTotalCosts = 0;
+  for (const fold of result.folds) {
+    const testStart = series.labels.indexOf(fold.testStart);
+    const testEnd = series.labels.indexOf(fold.testEnd) + 1;
+    const prefix = {
+      labels: series.labels.slice(0, testEnd),
+      values: series.values.slice(0, testEnd),
+    };
+    const backtest = calculateStrategyBacktest(prefix, fold.selectedParameters, 100_000, executionCosts);
+    let expectedFoldCosts = 0;
+
+    for (let index = testStart; index < testEnd; index += 1) {
+      const prefixEquity = backtest.equityCurve[index - 1];
+      const costFraction = backtest.transactionCostsUSD[index] / prefixEquity;
+      const cost = stitchedCapital * costFraction;
+      expectedFoldCosts += cost;
+      expectedTotalCosts += cost;
+      stitchedCapital *= 1 + backtest.dailyReturns[index];
+    }
+
+    assert.ok(Math.abs(fold.transactionCostsUSD - expectedFoldCosts) < 1e-8);
+  }
+
+  assert.ok(Math.abs(result.totalTransactionCostsUSD - expectedTotalCosts) < 1e-8);
 });
