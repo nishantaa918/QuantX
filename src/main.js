@@ -1309,7 +1309,7 @@ secondaryView.addEventListener('click', (event) => {
     showToast(result.valid ? 'Cross-asset portfolio analysis completed.' : 'Portfolio analysis could not be completed.');
   }
   if (action === 'run-research-analysis') runResearchAnalysis();
-  if (action === 'load-research-benchmark') loadResearchBenchmark();
+  if (action === 'load-research-benchmark') return loadResearchBenchmark();
   if (action === 'save-guardrails') saveGuardrailInputs();
   if (action === 'apply-heatmap') selectHeatmapParameters(actionButton);
   if (action === 'replay-prev') replayController?.previous();
