@@ -315,3 +315,171 @@ test('market-data routes reject upstream HTTP failures without caching an error 
     assert.equal(calls, 2, 'failed upstream responses must not be cached');
   }
 });
+
+
+function validQuote(symbol, price) {
+  const previousClose = price - 1;
+  return {
+    'Global Quote': {
+      '01. symbol': symbol,
+      '05. price': String(price),
+      '06. volume': '1000',
+      '07. latest trading day': '2026-11-23',
+      '08. previous close': String(previousClose),
+      '09. change': '1',
+      '10. change percent': String((1 / previousClose) * 100) + '%',
+    },
+  };
+}
+
+function dailyProviderPayload(symbol, adjusted = false) {
+  const base = symbol === 'MSFT' ? 200 : 100;
+  const row = (offset) => ({
+    '1. open': String(base + offset),
+    '2. high': String(base + offset + 2),
+    '3. low': String(base + offset - 1),
+    '4. close': String(base + offset + 1),
+    ...(adjusted ? {
+      '5. adjusted close': String(base + offset + 0.5),
+      '6. volume': '1000',
+      '7. dividend amount': '0',
+      '8. split coefficient': '1',
+    } : { '5. volume': '1000' }),
+  });
+  return {
+    'Meta Data': { '2. Symbol': symbol },
+    [adjusted ? 'Time Series (Daily Adjusted)' : 'Time Series (Daily)']: {
+      '2025-01-02': row(1),
+      '2025-01-01': row(0),
+    },
+  };
+}
+
+test('quote cache serves a fresh snapshot and fetches again after its TTL expires', async () => {
+  let clock = 1_800_000_000_000;
+  let calls = 0;
+  const handler = createMarketDataApiHandler({
+    apiKey: 'quote-cache-key',
+    now: () => clock,
+    quoteCacheTtlMs: 60_000,
+    fetchImpl: async () => {
+      calls += 1;
+      return { ok: true, json: async () => validQuote('AAPL', 100 + calls) };
+    },
+  });
+
+  const request = async () => {
+    const response = responseRecorder();
+    await handler({ method: 'GET', url: '/api/market-data/quote?symbol=AAPL' }, response);
+    return response.result();
+  };
+
+  const first = await request();
+  const cached = await request();
+  assert.equal(first.status, 200);
+  assert.equal(cached.status, 200);
+  assert.equal(first.body.data.price, cached.body.data.price);
+  assert.equal(calls, 1, 'a fresh quote should be served from cache');
+
+  clock += 60_001;
+  const refreshed = await request();
+  assert.equal(refreshed.status, 200);
+  assert.equal(refreshed.body.data.price, first.body.data.price + 1);
+  assert.equal(calls, 2, 'an expired quote should trigger a provider request');
+});
+
+test('forced quote refresh bypasses cache, and a failed refresh preserves the still-fresh snapshot', async () => {
+  let calls = 0;
+  const handler = createMarketDataApiHandler({
+    apiKey: 'quote-refresh-key',
+    now: () => Date.parse('2026-11-23T15:00:00.000Z'),
+    fetchImpl: async () => {
+      calls += 1;
+      if (calls === 2) return { ok: false, status: 503, json: async () => ({}) };
+      return { ok: true, json: async () => validQuote('AAPL', 150) };
+    },
+  });
+
+  const request = async (url) => {
+    const response = responseRecorder();
+    await handler({ method: 'GET', url }, response);
+    return response.result();
+  };
+
+  const initial = await request('/api/market-data/quote?symbol=AAPL');
+  assert.equal(initial.status, 200);
+  const forced = await request('/api/market-data/quote?symbol=AAPL&refresh=1');
+  assert.equal(forced.status, 502);
+  const afterFailure = await request('/api/market-data/quote?symbol=AAPL');
+  assert.equal(afterFailure.status, 200);
+  assert.equal(afterFailure.body.data.price, 150);
+  assert.equal(calls, 2, 'the failed forced refresh must not overwrite or discard the fresh cached snapshot');
+});
+
+test('daily cache isolates symbols and raw versus adjusted requests while reusing matching entries', async () => {
+  let calls = 0;
+  const handler = createMarketDataApiHandler({
+    apiKey: 'daily-cache-key',
+    fetchImpl: async (url) => {
+      calls += 1;
+      const params = new URL(url).searchParams;
+      const symbol = params.get('symbol');
+      const adjusted = params.get('function') === 'TIME_SERIES_DAILY_ADJUSTED';
+      return { ok: true, json: async () => dailyProviderPayload(symbol, adjusted) };
+    },
+  });
+
+  const request = async (symbol, adjustment = 'raw') => {
+    const response = responseRecorder();
+    await handler({
+      method: 'GET',
+      url: `/api/market-data/daily?symbol=${symbol}&adjustment=${adjustment}`,
+    }, response);
+    return response.result();
+  };
+
+  const aaplRaw = await request('AAPL');
+  const aaplRawCached = await request('AAPL');
+  const msftRaw = await request('MSFT');
+  const aaplAdjusted = await request('AAPL', 'adjusted');
+  const aaplAdjustedCached = await request('AAPL', 'adjusted');
+
+  assert.equal(aaplRaw.status, 200);
+  assert.equal(aaplRawCached.status, 200);
+  assert.equal(msftRaw.status, 200);
+  assert.equal(aaplAdjusted.status, 200);
+  assert.equal(aaplAdjustedCached.status, 200);
+  assert.equal(aaplRaw.body.data.symbol, 'AAPL');
+  assert.equal(msftRaw.body.data.symbol, 'MSFT');
+  assert.equal(aaplAdjusted.body.data.requestedAdjustment, 'adjusted');
+  assert.equal(aaplAdjusted.body.data.observations[0].adjustedClose, 100.5);
+  assert.equal(calls, 3, 'only the three distinct symbol/adjustment combinations should fetch');
+});
+
+test('daily cache expires according to its configured TTL', async () => {
+  let clock = 1_800_000_000_000;
+  let calls = 0;
+  const handler = createMarketDataApiHandler({
+    apiKey: 'daily-expiry-key',
+    now: () => clock,
+    cacheTtlMs: 100,
+    fetchImpl: async (url) => {
+      calls += 1;
+      const symbol = new URL(url).searchParams.get('symbol');
+      return { ok: true, json: async () => dailyProviderPayload(symbol) };
+    },
+  });
+
+  const request = async () => {
+    const response = responseRecorder();
+    await handler({ method: 'GET', url: '/api/market-data/daily?symbol=AAPL' }, response);
+    return response.result();
+  };
+
+  assert.equal((await request()).status, 200);
+  assert.equal((await request()).status, 200);
+  assert.equal(calls, 1, 'a fresh daily snapshot should be cached');
+  clock += 101;
+  assert.equal((await request()).status, 200);
+  assert.equal(calls, 2, 'an expired daily snapshot should be fetched again');
+});
