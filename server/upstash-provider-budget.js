@@ -43,10 +43,13 @@ return ttl
 `;
 
 function parseReservationResult(result) {
-  if (!Array.isArray(result) || result.length < 2) throw new ProviderBudgetStorageError();
-  const decision = Number(result[0]);
-  const retryMs = Number(result[1]);
-  if (![0, 1].includes(decision) || !Number.isFinite(retryMs) || retryMs < 0) {
+  if (!Array.isArray(result) || result.length !== 2) throw new ProviderBudgetStorageError();
+  const [decision, retryMs] = result;
+  if (
+    ![0, 1].includes(decision)
+    || !Number.isSafeInteger(retryMs)
+    || retryMs < 0
+  ) {
     throw new ProviderBudgetStorageError();
   }
   return decision === 1;

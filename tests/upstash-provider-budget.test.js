@@ -205,7 +205,7 @@ test('partial Upstash environment configuration returns a safe 503 instead of cr
 
 
 test('Upstash adapter rejects malformed provider-budget reservation decisions', async () => {
-  const malformedResults = [null, [], [2, 0], [0, 'not-a-number'], [0, -1]];
+  const malformedResults = [null, [], [2, 0], [0, 'not-a-number'], [0, -1], [null, null], ['1', 0], [1, '0'], [1, 1.5], [0, Number.MAX_SAFE_INTEGER + 1], [0, 0, 1]];
   for (const result of malformedResults) {
     const store = createUpstashProviderBudgetStore({
       url: 'https://example.upstash.io',
