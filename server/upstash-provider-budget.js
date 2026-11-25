@@ -71,7 +71,24 @@ export function createUpstashProviderBudgetStore({
     throw new ProviderBudgetStorageError('Persistent provider budget storage is not fully configured.');
   }
 
-  const endpoint = url.replace(/\/+$/, '');
+  let parsedEndpoint;
+  try {
+    parsedEndpoint = new URL(url);
+  } catch {
+    throw new ProviderBudgetStorageError('Persistent provider budget endpoint must be a valid HTTPS URL.');
+  }
+  if (
+    parsedEndpoint.protocol !== 'https:'
+    || !parsedEndpoint.hostname
+    || parsedEndpoint.username
+    || parsedEndpoint.password
+    || parsedEndpoint.pathname !== '/'
+    || parsedEndpoint.search
+    || parsedEndpoint.hash
+  ) {
+    throw new ProviderBudgetStorageError('Persistent provider budget endpoint must be a valid HTTPS URL.');
+  }
+  const endpoint = parsedEndpoint.origin;
   const budgetKey = `${keyPrefix}:requests`;
   const cooldownKey = `${keyPrefix}:cooldown`;
   const clientRateLimitPrefix = 'quantx:client-rate-limit:v1';
