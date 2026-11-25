@@ -63,6 +63,7 @@ let marketQuoteError = '';
 const marketQuoteRequests = createRequestVersion();
 const historicalDataRequests = createRequestVersion();
 const backtestRequests = createRequestVersion();
+const researchBenchmarkRequests = createRequestVersion();
 let experiments = loadExperiments();
 let latestBacktestSeries = experiments.find((experiment) => experiment.kind === 'backtest' && experiment.backtest.valid)?.series ?? null;
 let policyState = evaluatePolicyState({ series: currentSeries, parameters: strategyConfig, thresholds: guardrailThresholds, backtestSeries: latestBacktestSeries, executionCosts });
@@ -915,6 +916,7 @@ function renderResearchIntelligencePanel(experiment, options = {}) {
 }
 
 async function loadResearchBenchmark() {
+  const requestVersion = researchBenchmarkRequests.next();
   const selected = experiments.find((experiment) => experiment.id === selectedExperimentId) ?? experiments[0] ?? null;
   if (!selected || selected.dataSource !== 'historical') {
     showToast('External index comparison requires a dated historical experiment.');
@@ -945,6 +947,7 @@ async function loadResearchBenchmark() {
       if (!benchmarkSeries) {
         const response = await fetch(`/api/market-data/daily?symbol=${encodeURIComponent(symbol)}`, { headers: { Accept: 'application/json' } });
         const payload = await response.json();
+        if (!researchBenchmarkRequests.isCurrent(requestVersion)) return;
         if (!response.ok) throw new Error(marketDataResponseError(payload, response, `Benchmark request failed (${response.status}).`));
         if (payload.status !== 'historical' || payload.data?.symbol !== symbol || !Array.isArray(payload.data.observations)) {
           throw new Error(`No valid ${symbol} daily observations were returned.`);
@@ -953,6 +956,7 @@ async function loadResearchBenchmark() {
         researchBenchmarkCache.set(cacheKey, benchmarkSeries);
       }
     }
+    if (!researchBenchmarkRequests.isCurrent(requestVersion)) return;
     const refreshedPanel = document.querySelector('#research-intelligence');
     if (refreshedPanel) refreshedPanel.outerHTML = renderResearchIntelligencePanel(selected, { ...options, benchmarkSeries });
     const diagnostic = analyzeStrategyBacktest(selected.series, selected.backtest, benchmarkSeries).benchmarkDiagnostics;
@@ -960,6 +964,7 @@ async function loadResearchBenchmark() {
       ? `Compared ${selected.symbol} strategy returns with ${symbol} across ${diagnostic.observations} matched sessions.`
       : `Loaded ${symbol}, but there are too few matched observations for stable regression metrics.`);
   } catch (error) {
+    if (!researchBenchmarkRequests.isCurrent(requestVersion)) return;
     const refreshedPanel = document.querySelector('#research-intelligence');
     if (refreshedPanel) refreshedPanel.outerHTML = renderResearchIntelligencePanel(selected, { ...options, benchmarkError: error.message });
     showToast('Benchmark comparison could not be loaded.');
@@ -1522,7 +1527,12 @@ secondaryView.addEventListener('change', (event) => {
     if (heatmap) heatmap.outerHTML = renderPolicyHeatmap(event.target.value);
     hydrateIcons(secondaryView);
   }
+  if (event.target.id === 'research-benchmark-symbol') {
+    researchBenchmarkRequests.invalidate();
+    researchBenchmarkSymbol = event.target.value;
+  }
   if (event.target.id === 'experiment-selection') {
+    researchBenchmarkRequests.invalidate();
     selectedExperimentId = event.target.value;
     renderWorkspacePage('research-lab');
   }
