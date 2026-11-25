@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { calculateStrategyBacktest } from '../src/strategy-analysis.js';
+import { calculateExecutionCostRate, calculateStrategyBacktest } from '../src/strategy-analysis.js';
 
 const strategy = { type: 'moving-average', shortWindow: 2, longWindow: 6, lookback: 10, volatilitySensitivity: 1.5 };
 
@@ -58,4 +58,42 @@ test('volume-impact model validates model names and coefficient boundaries', () 
   assert.equal(calculateStrategyBacktest(series, strategy, 100_000, { slippageModel: 'unknown' }).valid, false);
   assert.equal(calculateStrategyBacktest(series, strategy, 100_000, { slippageModel: 'volume-impact', impactCoefficient: 0 }).valid, false);
   assert.equal(calculateStrategyBacktest(series, strategy, 100_000, { slippageModel: 'volume-impact', impactCoefficient: 1.01 }).valid, false);
+});
+
+test('volume-impact estimate never reads the execution session OHLCV', () => {
+  const costs = { commissionBps: 0, slippageModel: 'volume-impact', impactCoefficient: 0.1 };
+  const original = historicalSeries();
+  const baseline = calculateExecutionCostRate(original, 10, 0.5, 100_000, costs);
+  const changedExecutionSession = historicalSeries();
+  changedExecutionSession.observations[10].volume = 1;
+  changedExecutionSession.observations[10].high *= 10;
+  const sameEstimate = calculateExecutionCostRate(changedExecutionSession, 10, 0.5, 100_000, costs);
+  const changedPriorSession = historicalSeries();
+  changedPriorSession.observations[9].volume = 1;
+  const changedEstimate = calculateExecutionCostRate(changedPriorSession, 10, 0.5, 100_000, costs);
+
+  assert.equal(baseline.valid, true);
+  assert.equal(sameEstimate.slippageBps, baseline.slippageBps);
+  assert.ok(changedEstimate.slippageBps > baseline.slippageBps);
+});
+
+test('volume-impact estimate scales with order notional and respects its upper cap', () => {
+  const series = historicalSeries(100_000);
+  const costs = { commissionBps: 0, slippageModel: 'volume-impact', impactCoefficient: 0.1 };
+  const base = calculateExecutionCostRate(series, 10, 0.5, 100_000, costs);
+  const fourTimesCapital = calculateExecutionCostRate(series, 10, 0.5, 400_000, costs);
+  const extreme = calculateExecutionCostRate(series, 10, 1, 1e12, costs);
+
+  assert.equal(base.valid, true);
+  assert.equal(fourTimesCapital.valid, true);
+  assert.ok(Math.abs(fourTimesCapital.slippageBps / base.slippageBps - 2) < 1e-10);
+  assert.equal(extreme.slippageBps, 500);
+  assert.equal(extreme.costRate, 0.05);
+});
+
+test('zero-turnover execution has zero variable cost under the volume-impact model', () => {
+  const result = calculateExecutionCostRate(historicalSeries(), 10, 0, 100_000, {
+    commissionBps: 2, slippageModel: 'volume-impact', impactCoefficient: 0.1,
+  });
+  assert.deepEqual(result, { valid: true, slippageBps: 0, costRate: 0 });
 });
