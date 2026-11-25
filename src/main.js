@@ -23,6 +23,7 @@ import { createSimulationController, createSyntheticSimulation } from './simulat
 import { analyzeStrategyBacktest, detectMarketRegimes, testMomentumHacFamily, testMomentumHypothesis } from './research-engine.js';
 import { runWalkForwardValidation } from './walk-forward.js';
 import { analyzeEqualWeightPortfolio } from './portfolio-research.js';
+import { createRequestVersion } from './request-version.js';
 
 const STORAGE_KEY = 'quantx.midnight.experiments';
 const STRATEGY_STORAGE_KEY = 'quantx.midnight.strategy';
@@ -59,6 +60,10 @@ let historicalLoadError = '';
 let marketQuote = null;
 let marketQuoteState = 'idle';
 let marketQuoteError = '';
+const marketQuoteRequests = createRequestVersion();
+const historicalDataRequests = createRequestVersion();
+const backtestRequests = createRequestVersion();
+const researchBenchmarkRequests = createRequestVersion();
 let experiments = loadExperiments();
 let latestBacktestSeries = experiments.find((experiment) => experiment.kind === 'backtest' && experiment.backtest.valid)?.series ?? null;
 let policyState = evaluatePolicyState({ series: currentSeries, parameters: strategyConfig, thresholds: guardrailThresholds, backtestSeries: latestBacktestSeries, executionCosts });
@@ -639,6 +644,8 @@ function marketDataResponseError(payload, response, fallback) {
 
 async function loadMarketQuote(forceRefresh = false) {
   if (marketQuoteState === 'loading' || currentPage !== 'markets') return;
+  const requestVersion = marketQuoteRequests.next();
+  const requestedSymbol = selectedHistoricalSymbol;
   marketQuoteState = 'loading';
   marketQuoteError = '';
   const button = document.querySelector('[data-action="refresh-market-quote"]');
@@ -646,9 +653,10 @@ async function loadMarketQuote(forceRefresh = false) {
   if (button) button.disabled = true;
   if (status) status.textContent = 'LOADING';
   try {
-    const response = await fetch(`/api/market-data/quote?symbol=${encodeURIComponent(selectedHistoricalSymbol)}${forceRefresh ? '&refresh=1' : ''}`, { headers: { Accept: 'application/json' } });
+    const response = await fetch(`/api/market-data/quote?symbol=${encodeURIComponent(requestedSymbol)}${forceRefresh ? '&refresh=1' : ''}`, { headers: { Accept: 'application/json' } });
     const payload = await response.json();
-    if (!response.ok || payload.status !== 'quote' || payload.data?.symbol !== selectedHistoricalSymbol) {
+    if (!marketQuoteRequests.isCurrent(requestVersion) || requestedSymbol !== selectedHistoricalSymbol) return;
+    if (!response.ok || payload.status !== 'quote' || payload.data?.symbol !== requestedSymbol) {
       throw new Error(marketDataResponseError(payload, response, `Quote request failed (${response.status}).`));
     }
     marketQuote = { ...payload.data, retrievedAt: payload.lastUpdated };
@@ -656,6 +664,7 @@ async function loadMarketQuote(forceRefresh = false) {
     const panel = document.querySelector('.live-quote-panel');
     if (panel) panel.outerHTML = renderLiveQuotePanel();
   } catch (error) {
+    if (!marketQuoteRequests.isCurrent(requestVersion) || requestedSymbol !== selectedHistoricalSymbol) return;
     marketQuoteState = 'error';
     marketQuoteError = error.message || 'Could not load the latest quote.';
     const panel = document.querySelector('.live-quote-panel');
@@ -700,13 +709,16 @@ function mountHistoricalMarketData() {
 
 async function loadHistoricalMarketData() {
   if (historicalLoadState === 'loading') return;
+  const requestVersion = historicalDataRequests.next();
   const symbol = selectedHistoricalSymbol;
+  const adjustment = selectedHistoricalAdjustment;
   historicalLoadState = 'loading';
   historicalLoadError = '';
   renderHistoricalMarketState();
   try {
-    const response = await fetch(`/api/market-data/daily?symbol=${encodeURIComponent(symbol)}&adjustment=${encodeURIComponent(selectedHistoricalAdjustment)}`, { headers: { Accept: 'application/json' } });
+    const response = await fetch(`/api/market-data/daily?symbol=${encodeURIComponent(symbol)}&adjustment=${encodeURIComponent(adjustment)}`, { headers: { Accept: 'application/json' } });
     const payload = await response.json();
+    if (!historicalDataRequests.isCurrent(requestVersion) || symbol !== selectedHistoricalSymbol || adjustment !== selectedHistoricalAdjustment) return;
     if (!response.ok) {
       historicalLoadState = ['unavailable', 'rate_limited'].includes(payload.status) ? 'unavailable' : 'error';
       throw new Error(marketDataResponseError(payload, response, `Historical request failed (${response.status}).`));
@@ -720,6 +732,7 @@ async function loadHistoricalMarketData() {
     historicalLoadError = '';
     mountHistoricalMarketData();
   } catch (error) {
+    if (!historicalDataRequests.isCurrent(requestVersion) || symbol !== selectedHistoricalSymbol || adjustment !== selectedHistoricalAdjustment) return;
     if (historicalLoadState !== 'unavailable') historicalLoadState = 'error';
     historicalLoadError = error.message || 'Could not load historical data for the selected symbol.';
     renderHistoricalMarketState();
@@ -903,6 +916,7 @@ function renderResearchIntelligencePanel(experiment, options = {}) {
 }
 
 async function loadResearchBenchmark() {
+  const requestVersion = researchBenchmarkRequests.next();
   const selected = experiments.find((experiment) => experiment.id === selectedExperimentId) ?? experiments[0] ?? null;
   if (!selected || selected.dataSource !== 'historical') {
     showToast('External index comparison requires a dated historical experiment.');
@@ -933,6 +947,7 @@ async function loadResearchBenchmark() {
       if (!benchmarkSeries) {
         const response = await fetch(`/api/market-data/daily?symbol=${encodeURIComponent(symbol)}`, { headers: { Accept: 'application/json' } });
         const payload = await response.json();
+        if (!researchBenchmarkRequests.isCurrent(requestVersion)) return;
         if (!response.ok) throw new Error(marketDataResponseError(payload, response, `Benchmark request failed (${response.status}).`));
         if (payload.status !== 'historical' || payload.data?.symbol !== symbol || !Array.isArray(payload.data.observations)) {
           throw new Error(`No valid ${symbol} daily observations were returned.`);
@@ -941,6 +956,7 @@ async function loadResearchBenchmark() {
         researchBenchmarkCache.set(cacheKey, benchmarkSeries);
       }
     }
+    if (!researchBenchmarkRequests.isCurrent(requestVersion)) return;
     const refreshedPanel = document.querySelector('#research-intelligence');
     if (refreshedPanel) refreshedPanel.outerHTML = renderResearchIntelligencePanel(selected, { ...options, benchmarkSeries });
     const diagnostic = analyzeStrategyBacktest(selected.series, selected.backtest, benchmarkSeries).benchmarkDiagnostics;
@@ -948,6 +964,7 @@ async function loadResearchBenchmark() {
       ? `Compared ${selected.symbol} strategy returns with ${symbol} across ${diagnostic.observations} matched sessions.`
       : `Loaded ${symbol}, but there are too few matched observations for stable regression metrics.`);
   } catch (error) {
+    if (!researchBenchmarkRequests.isCurrent(requestVersion)) return;
     const refreshedPanel = document.querySelector('#research-intelligence');
     if (refreshedPanel) refreshedPanel.outerHTML = renderResearchIntelligencePanel(selected, { ...options, benchmarkError: error.message });
     showToast('Benchmark comparison could not be loaded.');
@@ -1103,6 +1120,7 @@ function updatePeriodButtons() {
 }
 
 async function runBacktest() {
+  const requestVersion = backtestRequests.next();
   const period = document.querySelector('#backtest-period').value;
   const seedValue = Number(document.querySelector('#backtest-seed').value);
   const dataSource = document.querySelector('#backtest-data-source').value;
@@ -1134,6 +1152,7 @@ async function runBacktest() {
       if (historicalMarketData?.data?.symbol !== symbol || historicalMarketData?.data?.requestedAdjustment !== priceBasis || !historicalMarketData?.data?.observations?.length) {
         const response = await fetch(`/api/market-data/daily?symbol=${encodeURIComponent(symbol)}&adjustment=${encodeURIComponent(priceBasis)}`, { headers: { Accept: 'application/json' } });
         const payload = await response.json();
+        if (!backtestRequests.isCurrent(requestVersion)) return;
         if (!response.ok) throw new Error(marketDataResponseError(payload, response, `Historical request failed (${response.status}).`));
         if (payload.status !== 'historical' || payload.data?.symbol !== symbol || !Array.isArray(payload.data.observations)) {
           throw new Error('The server returned no valid daily observations for the selected symbol.');
@@ -1142,6 +1161,7 @@ async function runBacktest() {
       }
       series = toPriceSeries(historicalMarketData.data.observations, { symbol: historicalMarketData.data.symbol, priceBasis });
     } catch (requestError) {
+      if (!backtestRequests.isCurrent(requestVersion)) return;
       error.textContent = requestError.message || 'Could not load historical data for the selected symbol.';
       showToast('Historical backtest not run. Check the market-data connection.');
       return;
@@ -1152,6 +1172,7 @@ async function runBacktest() {
     series = generateSeries(period, seedValue);
   }
 
+  if (!backtestRequests.isCurrent(requestVersion)) return;
   currentSeries = series;
   latestBacktestSeries = series;
   refreshPolicyState();
@@ -1468,8 +1489,13 @@ secondaryView.addEventListener('input', (event) => {
 });
 
 secondaryView.addEventListener('change', (event) => {
-  if (event.target.id === 'backtest-data-source') syncBacktestSourceControls();
+  if (event.target.id === 'backtest-data-source') {
+    backtestRequests.invalidate();
+    syncBacktestSourceControls();
+  }
   if (event.target.dataset.historicalAdjustment !== undefined) {
+    historicalDataRequests.invalidate();
+    backtestRequests.invalidate();
     selectedHistoricalAdjustment = event.target.value;
     historicalMarketData = null;
     historicalLoadState = 'idle';
@@ -1477,6 +1503,9 @@ secondaryView.addEventListener('change', (event) => {
     if (currentPage === 'markets') renderHistoricalMarketState();
   }
   if (event.target.dataset.historicalSymbol !== undefined) {
+    marketQuoteRequests.invalidate();
+    historicalDataRequests.invalidate();
+    backtestRequests.invalidate();
     selectedHistoricalSymbol = event.target.value;
     marketQuote = null;
     marketQuoteState = 'idle';
@@ -1498,7 +1527,12 @@ secondaryView.addEventListener('change', (event) => {
     if (heatmap) heatmap.outerHTML = renderPolicyHeatmap(event.target.value);
     hydrateIcons(secondaryView);
   }
+  if (event.target.id === 'research-benchmark-symbol') {
+    researchBenchmarkRequests.invalidate();
+    researchBenchmarkSymbol = event.target.value;
+  }
   if (event.target.id === 'experiment-selection') {
+    researchBenchmarkRequests.invalidate();
     selectedExperimentId = event.target.value;
     renderWorkspacePage('research-lab');
   }
