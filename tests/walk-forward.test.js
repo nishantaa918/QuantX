@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { runWalkForwardValidation } from '../src/walk-forward.js';
-import { calculateStrategyBacktest } from '../src/strategy-analysis.js';
+import { calculateExecutionCostRate, calculateStrategyBacktest } from '../src/strategy-analysis.js';
 
 function makeSeries(length = 140) {
   const points = Array.from({ length }, (_, index) => {
@@ -145,3 +145,59 @@ test('walk-forward validation retains support for unique non-calendar observatio
   }).valid, true);
 });
 
+test('walk-forward volume-impact costs use aligned prior OHLCV and stitched OOS capital', () => {
+  const base = makeSeries(140);
+  const series = {
+    ...base,
+    observations: base.values.map((close, index) => ({
+      date: base.labels[index],
+      close,
+      rawClose: close,
+      high: close * (1.01 + (index % 5) * 0.001),
+      low: close * (0.99 - (index % 3) * 0.001),
+      volume: 150_000 + (index % 11) * 75_000,
+    })),
+  };
+  const executionCosts = { commissionBps: 2, slippageModel: 'volume-impact', impactCoefficient: 0.1 };
+  const result = runWalkForwardValidation(series, {
+    trainWindow: 60,
+    testWindow: 20,
+    step: 20,
+    shortWindows: [3, 5],
+    longWindows: [15, 20],
+    executionCosts,
+  });
+  assert.equal(result.valid, true);
+
+  let stitchedCapital = 100_000;
+  let previousOutOfSampleExposure = 0;
+  let expectedTotalCosts = 0;
+  for (const fold of result.folds) {
+    const testStart = series.labels.indexOf(fold.testStart);
+    const testEnd = series.labels.indexOf(fold.testEnd) + 1;
+    const prefix = {
+      labels: series.labels.slice(0, testEnd),
+      values: series.values.slice(0, testEnd),
+      observations: series.observations.slice(0, testEnd),
+    };
+    const forward = calculateStrategyBacktest(prefix, fold.selectedParameters, 100_000, executionCosts);
+    assert.equal(forward.valid, true);
+    let expectedFoldCosts = 0;
+    for (let index = testStart; index < testEnd; index += 1) {
+      const exposure = forward.exposures[index - 1] / 100;
+      const priorExposure = index === testStart
+        ? previousOutOfSampleExposure
+        : forward.exposures[index - 2] / 100;
+      const turnover = Math.abs(exposure - priorExposure);
+      const cost = calculateExecutionCostRate(series, index, turnover, stitchedCapital, executionCosts);
+      assert.equal(cost.valid, true);
+      const amount = stitchedCapital * cost.costRate;
+      expectedFoldCosts += amount;
+      expectedTotalCosts += amount;
+      stitchedCapital *= 1 + forward.grossDailyReturns[index] - cost.costRate;
+    }
+    previousOutOfSampleExposure = forward.exposures[testEnd - 2] / 100;
+    assert.ok(Math.abs(fold.transactionCostsUSD - expectedFoldCosts) < 1e-7);
+  }
+  assert.ok(Math.abs(result.totalTransactionCostsUSD - expectedTotalCosts) < 1e-7);
+});
