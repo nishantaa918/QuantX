@@ -630,6 +630,13 @@ function renderHistoricalMarketPanel() {
   </section>`;
 }
 
+function marketDataResponseError(payload, response, fallback) {
+  const message = payload?.message || fallback;
+  if (payload?.status !== 'rate_limited') return message;
+  const retryAfter = response.headers.get('Retry-After');
+  return retryAfter ? `${message} Retry in approximately ${retryAfter} seconds.` : message;
+}
+
 async function loadMarketQuote(forceRefresh = false) {
   if (marketQuoteState === 'loading' || currentPage !== 'markets') return;
   marketQuoteState = 'loading';
@@ -642,7 +649,7 @@ async function loadMarketQuote(forceRefresh = false) {
     const response = await fetch(`/api/market-data/quote?symbol=${encodeURIComponent(selectedHistoricalSymbol)}${forceRefresh ? '&refresh=1' : ''}`, { headers: { Accept: 'application/json' } });
     const payload = await response.json();
     if (!response.ok || payload.status !== 'quote' || payload.data?.symbol !== selectedHistoricalSymbol) {
-      throw new Error(payload.message || `Quote request failed (${response.status}).`);
+      throw new Error(marketDataResponseError(payload, response, `Quote request failed (${response.status}).`));
     }
     marketQuote = { ...payload.data, retrievedAt: payload.lastUpdated };
     marketQuoteState = 'loaded';
@@ -701,8 +708,8 @@ async function loadHistoricalMarketData() {
     const response = await fetch(`/api/market-data/daily?symbol=${encodeURIComponent(symbol)}&adjustment=${encodeURIComponent(selectedHistoricalAdjustment)}`, { headers: { Accept: 'application/json' } });
     const payload = await response.json();
     if (!response.ok) {
-      historicalLoadState = payload.status === 'unavailable' ? 'unavailable' : 'error';
-      throw new Error(payload.message || `Historical request failed (${response.status}).`);
+      historicalLoadState = ['unavailable', 'rate_limited'].includes(payload.status) ? 'unavailable' : 'error';
+      throw new Error(marketDataResponseError(payload, response, `Historical request failed (${response.status}).`));
     }
     if (payload.status !== 'historical' || payload.data?.symbol !== symbol || !Array.isArray(payload.data.observations) || !payload.data.observations.length) {
       historicalLoadState = 'error';
@@ -926,7 +933,7 @@ async function loadResearchBenchmark() {
       if (!benchmarkSeries) {
         const response = await fetch(`/api/market-data/daily?symbol=${encodeURIComponent(symbol)}`, { headers: { Accept: 'application/json' } });
         const payload = await response.json();
-        if (!response.ok) throw new Error(payload.message || `Benchmark request failed (${response.status}).`);
+        if (!response.ok) throw new Error(marketDataResponseError(payload, response, `Benchmark request failed (${response.status}).`));
         if (payload.status !== 'historical' || payload.data?.symbol !== symbol || !Array.isArray(payload.data.observations)) {
           throw new Error(`No valid ${symbol} daily observations were returned.`);
         }
@@ -1127,7 +1134,7 @@ async function runBacktest() {
       if (historicalMarketData?.data?.symbol !== symbol || historicalMarketData?.data?.requestedAdjustment !== priceBasis || !historicalMarketData?.data?.observations?.length) {
         const response = await fetch(`/api/market-data/daily?symbol=${encodeURIComponent(symbol)}&adjustment=${encodeURIComponent(priceBasis)}`, { headers: { Accept: 'application/json' } });
         const payload = await response.json();
-        if (!response.ok) throw new Error(payload.message || `Historical request failed (${response.status}).`);
+        if (!response.ok) throw new Error(marketDataResponseError(payload, response, `Historical request failed (${response.status}).`));
         if (payload.status !== 'historical' || payload.data?.symbol !== symbol || !Array.isArray(payload.data.observations)) {
           throw new Error('The server returned no valid daily observations for the selected symbol.');
         }
