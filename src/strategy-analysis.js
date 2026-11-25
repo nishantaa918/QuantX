@@ -166,7 +166,7 @@ export function calculateExecutionCostRate(series, executionIndex, turnover, pri
   }
   if (!Number.isInteger(executionIndex) || executionIndex < 1 || !Number.isFinite(turnover) || turnover < 0
     || !Number.isFinite(priorNetEquity) || priorNetEquity <= 0) {
-    return { valid: false, errors: ['Execution cost calculation requires a valid session, non-negative turnover, and positive prior equity.'] };
+    return { valid: false, errors: ['Execution cost calculation requires a valid session, non-negative turnover, and positive finite prior equity.'] };
   }
   const config = validation.config;
   const model = config.slippageModel ?? 'fixed';

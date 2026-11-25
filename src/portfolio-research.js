@@ -1,3 +1,5 @@
+import { calculateExecutionCostRate, DEFAULT_EXECUTION_COSTS, validateExecutionCosts } from './strategy-analysis.js';
+
 function isValidCalendarDate(value) {
   if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
   const [year, month, day] = value.split('-').map(Number);
@@ -80,12 +82,16 @@ function correlation(first, second) {
  * historical price series. Dates are inner-joined before interval returns are computed.
  * This is a research baseline, not an order-level execution simulation.
  */
-export function analyzeEqualWeightPortfolio(assets, { startingCapital = 100_000 } = {}) {
+export function analyzeEqualWeightPortfolio(assets, { startingCapital = 100_000, executionCosts = DEFAULT_EXECUTION_COSTS } = {}) {
   if (!Array.isArray(assets) || assets.length < 2 || assets.length > 10) {
     return { valid: false, error: 'Select between 2 and 10 distinct historical assets.', assets: [] };
   }
   if (!Number.isFinite(startingCapital) || startingCapital <= 0) {
     return { valid: false, error: 'Starting capital must be a positive finite number.', assets: [] };
+  }
+  const costValidation = validateExecutionCosts(executionCosts);
+  if (!costValidation.valid) {
+    return { valid: false, error: costValidation.errors.join(' '), assets: [] };
   }
   if (!assets.every(isValidAssetSeries)) {
     return { valid: false, error: 'Each asset needs at least three positive prices with unique ascending valid ISO calendar dates.', assets: [] };
@@ -101,22 +107,81 @@ export function analyzeEqualWeightPortfolio(assets, { startingCapital = 100_000 
   }
 
   const priceMaps = assets.map((asset) => new Map(asset.series.labels.map((date, index) => [date, asset.series.values[index]])));
+  const observationMaps = assets.map((asset) => new Map((asset.series.observations ?? []).map((observation) => [observation.date, observation])));
   const commonDates = assets[0].series.labels.filter((date) => priceMaps.every((prices) => prices.has(date)));
   if (commonDates.length < 3) {
     return { valid: false, error: 'At least three shared trading dates are required across the selected assets.', assets: [] };
+  }
+
+  const alignedSeries = assets.map((asset, index) => ({
+    symbol: asset.symbol,
+    values: commonDates.map((date) => priceMaps[index].get(date)),
+    observations: commonDates.map((date) => observationMaps[index].get(date)),
+  }));
+  if (costValidation.config.slippageModel === 'volume-impact' && alignedSeries.some((series) => (
+    !series.observations.every((observation) => {
+      const close = observation?.rawClose ?? observation?.close;
+      return [close, observation?.high, observation?.low, observation?.volume].every(Number.isFinite)
+        && close > 0 && observation.high >= observation.low && observation.volume > 0;
+    })
+  ))) {
+    return { valid: false, error: 'Volume-impact portfolio costs require aligned OHLCV observations with positive volume and valid ranges for every selected asset.', assets: [] };
   }
 
   const assetReturns = assets.map((asset, assetIndex) => {
     const prices = priceMaps[assetIndex];
     return commonDates.slice(1).map((date, index) => prices.get(date) / prices.get(commonDates[index]) - 1);
   });
-  const portfolioReturns = commonDates.slice(1).map((_, index) => mean(assetReturns.map((returns) => returns[index])));
+  const grossPortfolioReturns = commonDates.slice(1).map((_, index) => mean(assetReturns.map((returns) => returns[index])));
+  const grossEquityCurve = [startingCapital];
   const equityCurve = [startingCapital];
-  for (const intervalReturn of portfolioReturns) equityCurve.push(equityCurve.at(-1) * (1 + intervalReturn));
+  const portfolioReturns = [];
+  const transactionCostsUSD = [];
+  let totalTurnover = 0;
+  const targetWeight = 1 / assets.length;
+
+  for (let interval = 0; interval < grossPortfolioReturns.length; interval += 1) {
+    const priorEquity = equityCurve.at(-1);
+    const grossReturn = grossPortfolioReturns[interval];
+    const preRebalanceEquity = priorEquity * (1 + grossReturn);
+    if (!Number.isFinite(preRebalanceEquity) || preRebalanceEquity <= 0) {
+      return { valid: false, error: 'The selected price range produces non-finite or non-positive portfolio equity.', assets: [] };
+    }
+    let totalCostRate = 0;
+    let intervalTurnover = 0;
+    {
+      for (let assetIndex = 0; assetIndex < assets.length; assetIndex += 1) {
+        const assetReturn = assetReturns[assetIndex][interval];
+        const driftedWeight = targetWeight * (1 + assetReturn) / (1 + grossReturn);
+        const turnover = Math.abs(targetWeight - driftedWeight);
+        intervalTurnover += turnover;
+        const cost = calculateExecutionCostRate(
+          alignedSeries[assetIndex],
+          interval + 2,
+          turnover,
+          preRebalanceEquity,
+          costValidation.config,
+        );
+        if (!cost.valid) return { valid: false, error: cost.errors.join(' '), assets: [] };
+        totalCostRate += cost.costRate;
+      }
+    }
+    const costAmount = preRebalanceEquity * totalCostRate;
+    const netEquity = preRebalanceEquity - costAmount;
+    if (!Number.isFinite(preRebalanceEquity) || !Number.isFinite(netEquity) || netEquity <= 0) {
+      return { valid: false, error: 'The selected price range and execution costs produce non-finite or non-positive portfolio equity.', assets: [] };
+    }
+    grossEquityCurve.push(grossEquityCurve.at(-1) * (1 + grossReturn));
+    equityCurve.push(netEquity);
+    portfolioReturns.push(netEquity / priorEquity - 1);
+    transactionCostsUSD.push(costAmount);
+    totalTurnover += intervalTurnover;
+  }
 
   if (!assetReturns.every((returns) => returns.every(Number.isFinite))
     || !portfolioReturns.every(Number.isFinite)
-    || !equityCurve.every(Number.isFinite)) {
+    || !equityCurve.every(Number.isFinite)
+    || !grossEquityCurve.every(Number.isFinite)) {
     return { valid: false, error: 'The selected price range produces non-finite returns or portfolio values; choose a less extreme data range.', assets: [] };
   }
 
@@ -124,6 +189,7 @@ export function analyzeEqualWeightPortfolio(assets, { startingCapital = 100_000 
   const elapsedYears = elapsedCalendarDays / 365.25;
   const annualizationPeriodsPerYear = portfolioReturns.length / elapsedYears;
   const portfolioRisk = annualizedRiskStats(portfolioReturns, commonDates);
+  const grossPortfolioRisk = annualizedRiskStats(grossPortfolioReturns, commonDates);
 
   const assetStats = assets.map((asset, index) => {
     const returns = assetReturns[index];
@@ -183,7 +249,18 @@ export function analyzeEqualWeightPortfolio(assets, { startingCapital = 100_000 
     returnObservations: portfolioReturns.length,
     startingCapital,
     equityCurve,
+    grossEquityCurve,
     intervalReturns: portfolioReturns,
+    grossIntervalReturns: grossPortfolioReturns,
+    transactionCostsUSD,
+    totalTransactionCostsUSD: transactionCostsUSD.reduce((sum, value) => sum + value, 0),
+    totalTurnover,
+    executionCosts: costValidation.config,
+    grossMetrics: {
+      totalReturnPct: (grossEquityCurve.at(-1) / startingCapital - 1) * 100,
+      annualizedVolatilityPct: grossPortfolioRisk.annualizedVolatility * 100,
+      sharpeRatio: grossPortfolioRisk.sharpeRatio,
+    },
     assetStats,
     correlationMatrix,
     metrics: {
@@ -203,7 +280,9 @@ export function analyzeEqualWeightPortfolio(assets, { startingCapital = 100_000 
       'Annualized return uses elapsed calendar time. Annualized volatility and zero-risk-free-rate Sharpe use a time-aware log-return diffusion estimator: each interval is weighted by its actual elapsed calendar duration.',
       'The time-aware risk estimator assumes log-return variance accumulates proportionally with calendar time; it is a descriptive model, not a forecast, and sparse or irregular observations can still produce unstable estimates.',
       'The analysis uses only dates shared by every selected asset and may exclude valid observations outside the common window.',
-      'Commissions, slippage, taxes, market impact, liquidity, cash drag, and execution delays are not modeled.',
+      'Costs are charged on rebalancing turnover after the first return interval; initial portfolio construction costs are excluded.',
+      'Fixed-basis-point commission and slippage are illustrative. The optional volume-impact proxy uses prior completed daily OHLCV and is not a calibrated market-impact model.',
+      'Taxes, exchange fees, borrow or financing costs, dividends, FX conversion, cash drag, and execution delays are not separately modeled.',
       'Historical adjusted closes account for provider adjustment methodology, but do not by themselves reconstruct an order-level dividend-reinvestment process.',
       'Maximum drawdown is measured only at the available shared closing-price observations and can miss larger intraperiod drawdowns.',
       'Correlation is undefined when either asset has zero return volatility and is displayed as unavailable.',
