@@ -172,6 +172,7 @@ test('quote endpoint caches snapshots and rejects malformed provider responses',
   const unavailable = responseRecorder();
   await noKey({ method: 'GET', url: '/api/market-data/quote?symbol=AAPL' }, unavailable);
   assert.equal(unavailable.result().status, 503);
+  assert.match(unavailable.result().body.message, /^Quote data is unavailable:/);
 });
 
 
