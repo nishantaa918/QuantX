@@ -161,6 +161,9 @@ function estimateVolumeImpactBps(series, executionIndex, tradedNotional, coeffic
 export function calculateExecutionCostRate(series, executionIndex, turnover, priorNetEquity, executionCosts = DEFAULT_EXECUTION_COSTS) {
   const validation = validateExecutionCosts(executionCosts);
   if (!validation.valid) return { valid: false, errors: validation.errors };
+  if (executionIndex === 0 && turnover === 0 && Number.isFinite(priorNetEquity) && priorNetEquity > 0) {
+    return { valid: true, slippageBps: 0, costRate: 0 };
+  }
   if (!Number.isInteger(executionIndex) || executionIndex < 1 || !Number.isFinite(turnover) || turnover < 0
     || !Number.isFinite(priorNetEquity) || priorNetEquity <= 0) {
     return { valid: false, errors: ['Execution cost calculation requires a valid session, non-negative turnover, and positive prior equity.'] };
@@ -255,7 +258,6 @@ export function calculateStrategyBacktest(series, parameters = DEFAULT_STRATEGY,
     const grossSessionReturn = index === 0 ? 0 : (price / values[index - 1] - 1) * effectiveExposure;
     const priorNetEquity = equityCurve.at(-1) ?? startingCapital;
     const priorGrossEquity = grossEquityCurve.at(-1) ?? startingCapital;
-    const tradedNotional = priorNetEquity * turnover;
     const executionCost = calculateExecutionCostRate(series, index, turnover, priorNetEquity, costValidation.config);
     slippageEstimatesBps.push(executionCost.slippageBps);
     const costRate = executionCost.costRate;
