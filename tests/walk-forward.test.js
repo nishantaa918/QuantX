@@ -98,3 +98,32 @@ test('walk-forward transaction costs are scaled to stitched out-of-sample capita
 
   assert.ok(Math.abs(result.totalTransactionCostsUSD - expectedTotalCosts) < 1e-8);
 });
+
+test('walk-forward validation rejects misaligned, duplicate, and out-of-order calendar labels', () => {
+  const series = makeSeries();
+  assert.equal(runWalkForwardValidation({ ...series, labels: series.labels.slice(1) }).valid, false);
+
+  const duplicate = [...series.labels];
+  duplicate[70] = duplicate[69];
+  assert.equal(runWalkForwardValidation({ ...series, labels: duplicate }).valid, false);
+
+  const outOfOrder = [...series.labels];
+  [outOfOrder[70], outOfOrder[71]] = [outOfOrder[71], outOfOrder[70]];
+  assert.equal(runWalkForwardValidation({ ...series, labels: outOfOrder }).valid, false);
+
+  const invalidDate = [...series.labels];
+  invalidDate[70] = '2025-02-30';
+  assert.equal(runWalkForwardValidation({ ...series, labels: invalidDate }).valid, false);
+});
+
+test('walk-forward validation retains support for unique non-calendar observation labels', () => {
+  const series = makeSeries();
+  const labels = series.values.map((_, index) => `Session ${index + 1}`);
+  assert.equal(runWalkForwardValidation({ ...series, labels }, {
+    trainWindow: 60,
+    testWindow: 20,
+    shortWindows: [3],
+    longWindows: [15],
+  }).valid, true);
+});
+
