@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { calculatePerformance } from '../src/data.js';
 import {
+  analyzeExecutionCostSensitivity,
   calculateStrategyBacktest,
   DEFAULT_EXECUTION_COSTS,
   DEFAULT_GUARDRAILS,
@@ -292,5 +293,45 @@ test('parameter sweeps and shared policy state preserve volume-impact execution 
   assert.deepEqual(state.currentBacktest.executionCosts, normalizedCosts);
   assert.deepEqual(state.latestBacktest.executionCosts, normalizedCosts);
   assert.ok(state.latestBacktest.totalTransactionCostsUSD > 0);
+  assert.equal(JSON.stringify(series), snapshot);
+});
+
+test('single-asset cost sensitivity compares zero, configured, and stressed assumptions', () => {
+  const series = risingSeries();
+  const sensitivity = analyzeExecutionCostSensitivity(series, activeStrategy, 100_000, {
+    commissionBps: 1,
+    slippageBps: 5,
+  });
+  assert.equal(sensitivity.valid, true);
+  assert.deepEqual(sensitivity.scenarios.map((scenario) => scenario.label), ['Zero costs', 'Configured', 'Stressed (2×)']);
+  assert.ok(Math.abs(sensitivity.scenarios[0].netReturnPct - sensitivity.grossReturnPct) < 1e-10);
+  assert.ok(sensitivity.scenarios[1].totalTransactionCostsUSD > 0);
+  assert.ok(sensitivity.scenarios[2].totalTransactionCostsUSD > sensitivity.scenarios[1].totalTransactionCostsUSD);
+  assert.ok(sensitivity.scenarios[0].netReturnPct > sensitivity.scenarios[1].netReturnPct);
+  assert.ok(sensitivity.scenarios[1].netReturnPct > sensitivity.scenarios[2].netReturnPct);
+});
+
+test('single-asset volume-impact sensitivity doubles the coefficient without mutating OHLCV', () => {
+  const values = Array.from({ length: 100 }, (_, index) => 100 + Math.sin(index * 0.83) * 8 + Math.sin(index * 0.19) * 3);
+  const series = {
+    values,
+    observations: values.map((close, index) => ({
+      date: `2025-Session-${index + 1}`,
+      close,
+      rawClose: close,
+      high: close * 1.02,
+      low: close * 0.98,
+      volume: 250_000 + (index % 7) * 100_000,
+    })),
+  };
+  const snapshot = JSON.stringify(series);
+  const sensitivity = analyzeExecutionCostSensitivity(series, activeStrategy, 100_000, {
+    commissionBps: 1,
+    slippageModel: 'volume-impact',
+    impactCoefficient: 0.1,
+  });
+  assert.equal(sensitivity.valid, true);
+  assert.equal(sensitivity.scenarios[2].executionCosts.impactCoefficient, 0.2);
+  assert.ok(sensitivity.scenarios[2].totalTransactionCostsUSD > sensitivity.scenarios[1].totalTransactionCostsUSD);
   assert.equal(JSON.stringify(series), snapshot);
 });
