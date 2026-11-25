@@ -577,3 +577,100 @@ test('failed shared provider requests are cleared so a later request can retry',
   assert.equal(retry.body.data.price, 180);
   assert.equal(calls, 2);
 });
+
+
+test('successful forced quote refresh replaces the cached snapshot', async () => {
+  let calls = 0;
+  const handler = createMarketDataApiHandler({
+    apiKey: 'quote-successful-refresh-key',
+    fetchImpl: async () => {
+      calls += 1;
+      return { ok: true, json: async () => validQuote('AAPL', calls === 1 ? 150 : 160) };
+    },
+  });
+  const request = async (url) => {
+    const response = responseRecorder();
+    await handler({ method: 'GET', url }, response);
+    return response.result();
+  };
+
+  assert.equal((await request('/api/market-data/quote?symbol=AAPL')).body.data.price, 150);
+  assert.equal((await request('/api/market-data/quote?symbol=AAPL&refresh=1')).body.data.price, 160);
+  assert.equal((await request('/api/market-data/quote?symbol=AAPL')).body.data.price, 160);
+  assert.equal(calls, 2, 'the successful forced refresh should replace the previous cached snapshot');
+});
+
+test('normal quote reads remain isolated from an in-progress forced refresh', async () => {
+  let calls = 0;
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  const handler = createMarketDataApiHandler({
+    apiKey: 'quote-refresh-isolation-key',
+    fetchImpl: async () => {
+      calls += 1;
+      if (calls === 2) await gate;
+      return { ok: true, json: async () => validQuote('AAPL', calls === 1 ? 150 : 160) };
+    },
+  });
+  const request = async (url) => {
+    const response = responseRecorder();
+    await handler({ method: 'GET', url }, response);
+    return response.result();
+  };
+
+  const initial = await request('/api/market-data/quote?symbol=AAPL');
+  assert.equal(initial.body.data.price, 150);
+  const refreshing = request('/api/market-data/quote?symbol=AAPL&refresh=1');
+  const duringRefresh = await request('/api/market-data/quote?symbol=AAPL');
+  assert.equal(duringRefresh.status, 200);
+  assert.equal(duringRefresh.body.data.price, 150, 'normal reads may use the still-valid snapshot while refresh runs');
+  release();
+  const refreshed = await refreshing;
+  assert.equal(refreshed.body.data.price, 160);
+  const afterRefresh = await request('/api/market-data/quote?symbol=AAPL');
+  assert.equal(afterRefresh.body.data.price, 160);
+  assert.equal(calls, 2);
+});
+
+test('cache lifecycle remains bounded across every allowlisted symbol and prunes expired entries', async () => {
+  const symbols = ['AAPL', 'MSFT', 'NVDA', 'AMZN', 'GOOGL', 'META', 'TSLA', 'SPY', 'QQQ', 'DIA', 'IWM'];
+  let clock = 1_800_000_000_000;
+  let calls = 0;
+  const handler = createMarketDataApiHandler({
+    apiKey: 'cache-lifecycle-key',
+    now: () => clock,
+    cacheTtlMs: 100,
+    quoteCacheTtlMs: 100,
+    fetchImpl: async (url) => {
+      calls += 1;
+      const params = new URL(url).searchParams;
+      const symbol = params.get('symbol');
+      if (params.get('function') === 'GLOBAL_QUOTE') {
+        return { ok: true, json: async () => validQuote(symbol, 200) };
+      }
+      const adjusted = params.get('function') === 'TIME_SERIES_DAILY_ADJUSTED';
+      return { ok: true, json: async () => dailyProviderPayload(symbol, adjusted) };
+    },
+  });
+  const request = async (path) => {
+    const response = responseRecorder();
+    await handler({ method: 'GET', url: path }, response);
+    return response.result();
+  };
+
+  for (const symbol of symbols) {
+    assert.equal((await request(`/api/market-data/quote?symbol=${symbol}`)).status, 200);
+    assert.equal((await request(`/api/market-data/daily?symbol=${symbol}&adjustment=raw`)).status, 200);
+    assert.equal((await request(`/api/market-data/daily?symbol=${symbol}&adjustment=adjusted`)).status, 200);
+  }
+  assert.equal(calls, symbols.length * 3, 'the allowlist yields at most three distinct cache keys per symbol');
+
+  assert.equal((await request('/api/market-data/quote?symbol=AAPL')).status, 200);
+  assert.equal(calls, symbols.length * 3, 'revisiting a symbol within TTL should reuse its cache entry');
+
+  clock += 101;
+  assert.equal((await request('/api/market-data/quote?symbol=AAPL')).status, 200);
+  assert.equal(calls, symbols.length * 3 + 1, 'expired quote entry should be refetched');
+  assert.equal((await request('/api/market-data/daily?symbol=MSFT&adjustment=raw')).status, 200);
+  assert.equal(calls, symbols.length * 3 + 2, 'expired daily entry should also be refetched after cleanup');
+});
