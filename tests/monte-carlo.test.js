@@ -66,3 +66,20 @@ test('zero-equity and invalid path inputs are handled safely', () => {
   assert.equal(calculateMaximumDrawdown([100, -1]), null);
   assert.equal(calculateMaximumDrawdown([100, Number.NaN]), null);
 });
+
+test('Monte Carlo validates explicit block lengths and caps them to the observed return sample', () => {
+  for (const blockLength of [0, -1, 1.5, Number.NaN]) {
+    const result = runMonteCarlo(100, 1, history, 3, { blockLength });
+    assert.equal(result.valid, false);
+    assert.equal(result.error, 'Block length must be a positive integer.');
+  }
+
+  const capped = runMonteCarlo(100, 1, history, 3, { blockLength: 10_000 });
+  assert.equal(capped.valid, true);
+  assert.equal(capped.blockLength, history.values.length - 1);
+
+  const explicit = runMonteCarlo(100, 1, history, 3, { blockLength: 7 });
+  assert.equal(explicit.valid, true);
+  assert.equal(explicit.blockLength, 7);
+});
+
