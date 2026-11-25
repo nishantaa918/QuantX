@@ -5,6 +5,22 @@ const QUOTE_ROUTE = '/api/market-data/quote';
 const QUOTE_CACHE_TTL_MS = 60 * 1000;
 const CACHE_TTL_MS = 15 * 60 * 1000;
 
+
+async function fetchProviderOnce(inFlight, key, fetchImpl, providerUrl) {
+  if (inFlight.has(key)) return inFlight.get(key);
+  const pending = (async () => {
+    const upstream = await fetchImpl(providerUrl, { signal: AbortSignal.timeout(10_000) });
+    if (!upstream.ok) return { upstream, providerPayload: null };
+    return { upstream, providerPayload: await upstream.json() };
+  })();
+  inFlight.set(key, pending);
+  try {
+    return await pending;
+  } finally {
+    if (inFlight.get(key) === pending) inFlight.delete(key);
+  }
+}
+
 function isValidIsoDate(value) {
   if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
   const date = new Date(`${value}T00:00:00.000Z`);
@@ -33,6 +49,7 @@ export function createAlphaVantageMiddleware({
   quoteCacheTtlMs = QUOTE_CACHE_TTL_MS,
 } = {}) {
   const cache = new Map();
+  const inFlight = new Map();
   return async function alphaVantageMiddleware(request, response, next) {
     const requestUrl = new URL(request.url, 'http://localhost');
     const isDaily = requestUrl.pathname === DAILY_ROUTE;
@@ -58,9 +75,8 @@ export function createAlphaVantageMiddleware({
       try {
         const providerUrl = new URL('https://www.alphavantage.co/query');
         providerUrl.search = new URLSearchParams({ function: 'GLOBAL_QUOTE', symbol, apikey: apiKey }).toString();
-        const upstream = await fetchImpl(providerUrl, { signal: AbortSignal.timeout(10_000) });
+        const { upstream, providerPayload } = await fetchProviderOnce(inFlight, cacheKey, fetchImpl, providerUrl);
         if (!upstream.ok) return sendJson(response, 502, { status: 'error', message: `Alpha Vantage returned HTTP ${upstream.status}.` });
-        const providerPayload = await upstream.json();
         if (providerPayload?.Note) {
           return sendJson(response, 429, { status: 'rate_limited', message: 'The quote provider rate limit was reached.' });
         }
@@ -120,9 +136,8 @@ export function createAlphaVantageMiddleware({
         outputsize: 'compact',
         apikey: apiKey,
       }).toString();
-      const upstream = await fetchImpl(providerUrl, { signal: AbortSignal.timeout(10_000) });
+      const { upstream, providerPayload } = await fetchProviderOnce(inFlight, `daily:${cacheKey}`, fetchImpl, providerUrl);
       if (!upstream.ok) return sendJson(response, 502, { status: 'error', message: `Alpha Vantage returned HTTP ${upstream.status}.` });
-      const providerPayload = await upstream.json();
       if (providerPayload?.Note) {
         return sendJson(response, 429, { status: 'rate_limited', message: 'Alpha Vantage rate limit reached.' });
       }
