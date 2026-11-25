@@ -3,6 +3,7 @@ import {
   calculateStrategyBacktest,
   DEFAULT_EXECUTION_COSTS,
   DEFAULT_STRATEGY,
+  calculateExecutionCostRate,
 } from './strategy-analysis.js';
 
 function validSeries(series) {
@@ -34,6 +35,7 @@ function sliceSeries(series, start, end) {
     ...series,
     labels: Array.isArray(series.labels) ? series.labels.slice(start, end) : [],
     values: series.values.slice(start, end),
+    ...(Array.isArray(series.observations) ? { observations: series.observations.slice(start, end) } : {}),
   };
 }
 
@@ -129,34 +131,30 @@ export function runWalkForwardValidation(series, {
       continue;
     }
 
-    const foldReturns = forwardBacktest.dailyReturns.slice(trainEnd, testEnd);
-    const costRatePerUnitTurnover = (forwardBacktest.executionCosts.commissionBps + forwardBacktest.executionCosts.slippageBps) / 10_000;
-    const firstTestExposure = (forwardBacktest.exposures[trainEnd - 1] ?? 0) / 100;
-    const firstTestTurnover = Math.abs(firstTestExposure - previousOutOfSampleExposure);
-    const firstTestCostRate = firstTestTurnover * costRatePerUnitTurnover;
-    // A newly selected fold strategy must rebalance from the position actually
-    // held at the end of the preceding OOS fold, not its own hypothetical history.
-    foldReturns[0] = forwardBacktest.grossDailyReturns[trainEnd] - firstTestCostRate;
+    const foldReturns = forwardBacktest.grossDailyReturns.slice(trainEnd, testEnd);
     const foldBenchmarkReturns = [];
+    let foldCosts = 0;
+    let foldStrategyCapital = strategyCapital;
     for (let index = trainEnd; index < testEnd; index += 1) {
+      const effectiveExposure = (forwardBacktest.exposures[index - 1] ?? 0) / 100;
+      const priorExposure = index === trainEnd
+        ? previousOutOfSampleExposure
+        : (forwardBacktest.exposures[index - 2] ?? 0) / 100;
+      const turnover = Math.abs(effectiveExposure - priorExposure);
+      // Recalculate every session against stitched OOS capital. This matters
+      // for volume-impact slippage because participation depends on order notional.
+      const executionCost = calculateExecutionCostRate(series, index, turnover, foldStrategyCapital, executionCosts);
+      if (!executionCost.valid) {
+        return { valid: false, error: executionCost.errors.join(' '), folds: [], skippedFolds };
+      }
+      const netReturn = forwardBacktest.grossDailyReturns[index] - executionCost.costRate;
+      foldReturns[index - trainEnd] = netReturn;
+      foldCosts += foldStrategyCapital * executionCost.costRate;
+      foldStrategyCapital *= 1 + netReturn;
       foldBenchmarkReturns.push(series.values[index] / series.values[index - 1] - 1);
     }
     const foldEquity = compoundReturns(foldReturns, startingCapital);
     const foldBenchmarkEquity = compoundReturns(foldBenchmarkReturns, startingCapital);
-    // Scale test-window transaction costs to the actual stitched OOS
-    // portfolio equity, not the separate full-prefix training backtest equity.
-    let foldCosts = 0;
-    let foldStrategyCapital = strategyCapital;
-    for (let index = trainEnd; index < testEnd; index += 1) {
-      const prefixEquity = forwardBacktest.equityCurve[index - 1] ?? startingCapital;
-      const costFraction = index === trainEnd
-        ? firstTestCostRate
-        : prefixEquity > 0
-          ? forwardBacktest.transactionCostsUSD[index] / prefixEquity
-          : 0;
-      foldCosts += foldStrategyCapital * costFraction;
-      foldStrategyCapital *= 1 + foldReturns[index - trainEnd];
-    }
 
     folds.push({
       number: folds.length + 1,
