@@ -4,6 +4,7 @@ import {
   DEFAULT_EXECUTION_COSTS,
   DEFAULT_STRATEGY,
   calculateExecutionCostRate,
+  validateExecutionCosts,
 } from './strategy-analysis.js';
 
 function validSeries(series) {
@@ -217,5 +218,43 @@ export function runWalkForwardValidation(series, {
       'The first test-session position is determined by the selected policy signal from the prior training session.',
       'Results remain sensitive to the candidate grid, window sizes, execution-cost assumptions, and data quality.',
     ],
+  };
+}
+
+export function runWalkForwardCostSensitivity(series, options = {}) {
+  const validation = validateExecutionCosts(options.executionCosts ?? DEFAULT_EXECUTION_COSTS);
+  if (!validation.valid) return { valid: false, error: validation.errors.join(' '), scenarios: [] };
+  const configured = validation.config;
+  const stressed = {
+    ...configured,
+    commissionBps: Math.min(100, configured.commissionBps * 2),
+    ...(configured.slippageModel === 'volume-impact'
+      ? { impactCoefficient: Math.min(1, (configured.impactCoefficient ?? 0.1) * 2) }
+      : { slippageBps: Math.min(100, configured.slippageBps * 2) }),
+  };
+  const definitions = [
+    { label: 'Zero costs', executionCosts: { commissionBps: 0, slippageBps: 0 } },
+    { label: 'Configured', executionCosts: configured },
+    { label: 'Stressed (2×)', executionCosts: stressed },
+  ];
+  const analyses = definitions.map((scenario) => ({
+    ...scenario,
+    result: runWalkForwardValidation(series, { ...options, executionCosts: scenario.executionCosts }),
+  }));
+  const failed = analyses.find((scenario) => !scenario.result.valid);
+  if (failed) return { valid: false, error: `${failed.label}: ${failed.result.error}`, scenarios: [] };
+  return {
+    valid: true,
+    configuredResult: analyses[1].result,
+    scenarios: analyses.map(({ label, executionCosts: scenarioCosts, result }) => ({
+      label,
+      executionCosts: scenarioCosts,
+      outOfSampleReturnPct: result.metrics.totalReturn,
+      totalTransactionCostsUSD: result.totalTransactionCostsUSD,
+      sharpeRatio: result.metrics.sharpeRatio,
+      maxDrawdownPct: result.metrics.maxDrawdown,
+      folds: result.folds.length,
+      outOfSampleObservations: result.outOfSampleObservations,
+    })),
   };
 }
