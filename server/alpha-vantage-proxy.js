@@ -112,11 +112,11 @@ export function createAlphaVantageMiddleware({
         const providerUrl = new URL('https://www.alphavantage.co/query');
         providerUrl.search = new URLSearchParams({ function: 'GLOBAL_QUOTE', symbol, apikey: apiKey }).toString();
         const { upstream, providerPayload, budgetBlocked, retryAfterSeconds } = await fetchProviderOnce(inFlight, cacheKey, fetchImpl, providerUrl, providerBudget);
-        if (!upstream.ok) return sendJson(response, 502, { status: 'error', message: `Alpha Vantage returned HTTP ${upstream.status}.` });
         if (budgetBlocked) {
           response.setHeader('Retry-After', String(retryAfterSeconds));
           return sendJson(response, 429, { status: 'rate_limited', message: 'Market-data provider request budget is temporarily exhausted. Please retry after the indicated delay.' });
         }
+        if (!upstream.ok) return sendJson(response, 502, { status: 'error', message: `Alpha Vantage returned HTTP ${upstream.status}.` });
         if (providerPayload?.Note) {
           response.setHeader('Retry-After', String(Math.ceil(providerBudget.cooldownMs / 1000)));
           return sendJson(response, 429, { status: 'rate_limited', message: 'The quote provider rate limit was reached. Requests are temporarily paused.' });
@@ -178,11 +178,11 @@ export function createAlphaVantageMiddleware({
         apikey: apiKey,
       }).toString();
       const { upstream, providerPayload, budgetBlocked, retryAfterSeconds } = await fetchProviderOnce(inFlight, `daily:${cacheKey}`, fetchImpl, providerUrl, providerBudget);
-      if (!upstream.ok) return sendJson(response, 502, { status: 'error', message: `Alpha Vantage returned HTTP ${upstream.status}.` });
       if (budgetBlocked) {
         response.setHeader('Retry-After', String(retryAfterSeconds));
         return sendJson(response, 429, { status: 'rate_limited', message: 'Market-data provider request budget is temporarily exhausted. Please retry after the indicated delay.' });
       }
+      if (!upstream.ok) return sendJson(response, 502, { status: 'error', message: `Alpha Vantage returned HTTP ${upstream.status}.` });
       if (providerPayload?.Note) {
         response.setHeader('Retry-After', String(Math.ceil(providerBudget.cooldownMs / 1000)));
         return sendJson(response, 429, { status: 'rate_limited', message: 'Alpha Vantage rate limit reached. Requests are temporarily paused.' });
