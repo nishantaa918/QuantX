@@ -171,3 +171,34 @@ test('Upstash adapter uses an atomic fixed-window command for hashed client iden
   assert.equal(result.allowed, false);
   assert.equal(result.retryAfterSeconds, 2);
 });
+
+test('partial Upstash environment configuration returns a safe 503 instead of crashing handler initialisation', async () => {
+  const previousUrl = process.env.UPSTASH_REDIS_REST_URL;
+  const previousToken = process.env.UPSTASH_REDIS_REST_TOKEN;
+  let providerCalls = 0;
+
+  try {
+    process.env.UPSTASH_REDIS_REST_URL = 'https://example.upstash.io';
+    delete process.env.UPSTASH_REDIS_REST_TOKEN;
+
+    const handler = createMarketDataApiHandler({
+      apiKey: 'test-key',
+      fetchImpl: async () => {
+        providerCalls += 1;
+        return { ok: true, json: async () => ({}) };
+      },
+    });
+    const response = responseRecorder();
+    await handler({ method: 'GET', url: '/api/market-data/quote?symbol=AAPL' }, response);
+
+    assert.equal(response.result().status, 503);
+    assert.equal(response.result().body.status, 'unavailable');
+    assert.equal(JSON.stringify(response.result().body).includes('example.upstash.io'), false);
+    assert.equal(providerCalls, 0);
+  } finally {
+    if (previousUrl === undefined) delete process.env.UPSTASH_REDIS_REST_URL;
+    else process.env.UPSTASH_REDIS_REST_URL = previousUrl;
+    if (previousToken === undefined) delete process.env.UPSTASH_REDIS_REST_TOKEN;
+    else process.env.UPSTASH_REDIS_REST_TOKEN = previousToken;
+  }
+});
