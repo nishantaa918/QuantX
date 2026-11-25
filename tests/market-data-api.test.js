@@ -641,6 +641,7 @@ test('cache lifecycle remains bounded across every allowlisted symbol and prunes
     now: () => clock,
     cacheTtlMs: 100,
     quoteCacheTtlMs: 100,
+    providerRequestLimit: 40,
     fetchImpl: async (url) => {
       calls += 1;
       const params = new URL(url).searchParams;
