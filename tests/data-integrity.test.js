@@ -5,7 +5,7 @@ import { calculatePerformance } from '../src/data.js';
 test('performance metrics calculate from a complete valid price sequence', () => {
   const result = calculatePerformance([100, 110, 99, 108.9]);
   assert.equal(result.valid, true);
-  assert.equal(result.totalReturn, 8.9);
+  assert.ok(Math.abs(result.totalReturn - 8.9) < 1e-10);
   assert.ok(Math.abs(result.dailyReturn - 10) < 1e-10);
   assert.ok(Number.isFinite(result.annualizedVolatility));
   assert.equal(result.maxDrawdown, -10);
