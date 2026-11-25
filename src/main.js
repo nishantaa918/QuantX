@@ -1131,12 +1131,14 @@ async function runBacktest() {
   const priceBasis = document.querySelector('#backtest-adjustment').value;
   selectedHistoricalSymbol = symbol;
   selectedHistoricalAdjustment = priceBasis;
-  const slippageModel = document.querySelector('#slippage-model').value;
+  const slippageModel = document.querySelector('#slippage-model')?.value || executionCosts.slippageModel || 'fixed';
   const costValidation = validateExecutionCosts({
     commissionBps: Number(document.querySelector('#commission-bps').value),
     slippageBps: Number(document.querySelector('#slippage-bps').value),
-    slippageModel,
-    ...(slippageModel === 'volume-impact' ? { impactCoefficient: Number(document.querySelector('#impact-coefficient').value) } : {}),
+    ...(slippageModel === 'volume-impact' ? {
+      slippageModel,
+      impactCoefficient: Number(document.querySelector('#impact-coefficient')?.value || executionCosts.impactCoefficient || 0.1),
+    } : {}),
   });
   const error = document.querySelector('#backtest-run-error');
   const validation = validateStrategyParameters(strategyConfig);
