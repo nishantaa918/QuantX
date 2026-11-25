@@ -40,6 +40,10 @@ If Alpha Vantage has explicitly confirmed a different allowance for this educati
 6. Confirm the response status, provider trading date, and retrieval timestamp before relying on displayed data.
 7. Respect provider rate limits; repeated refreshes can be throttled. Do not interpret a quote snapshot as a live tick stream.
 
+## API health check
+
+The deployment exposes a lightweight liveness endpoint at `/api/health`. It supports GET, returns a minimal service status and timestamp, and does not disclose API-key or storage configuration. It is a liveness check only; it does not make upstream provider calls or guarantee that external market-data services are available.
+
 ## Validation
 
 - `npm test` runs the unit and API-handler tests.
