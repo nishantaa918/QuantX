@@ -120,11 +120,19 @@ export function createAlphaVantageMiddleware({
   providerRequestLimit = Number(process.env.ALPHA_VANTAGE_DAILY_REQUEST_LIMIT) || 25,
   providerWindowMs = PROVIDER_REQUEST_WINDOW_MS,
   providerRateLimitCooldownMs = PROVIDER_RATE_LIMIT_COOLDOWN_MS,
-  providerBudgetStore = createUpstashProviderBudgetStore(),
+  effectiveProviderBudgetStore,
   clientRequestLimit = Number(process.env.QUANTX_CLIENT_REQUEST_LIMIT) || CLIENT_RATE_LIMIT_DEFAULT,
   clientRateLimitWindowMs = CLIENT_RATE_LIMIT_WINDOW_MS,
   logger = process.env.VERCEL === '1' ? console : null,
 } = {}) {
+  let providerBudgetStoreInitializationFailed = false;
+  if (effectiveProviderBudgetStore === undefined) {
+    try {
+      effectiveProviderBudgetStore = createUpstashProviderBudgetStore();
+    } catch {
+      providerBudgetStoreInitializationFailed = true;
+    }
+  }
   const cache = new Map();
   const inFlight = new Map();
   const clientRequests = new Map();
@@ -145,6 +153,9 @@ export function createAlphaVantageMiddleware({
     if (!isDaily && !isQuote) return next();
     attachRequestLogging(request, response, requestUrl, now(), now, logger);
     if (request.method !== 'GET') return sendJson(response, 405, { status: 'error', message: 'Use GET for market data.' });
+    if (providerBudgetStoreInitializationFailed) {
+      return sendJson(response, 503, { status: 'unavailable', message: 'Request protection is temporarily unavailable. Please retry shortly.' });
+    }
     const symbol = (requestUrl.searchParams.get('symbol') ?? 'AAPL').trim().toUpperCase();
     const adjustment = (requestUrl.searchParams.get('adjustment') ?? 'raw').trim().toLowerCase();
     if (!SUPPORTED_HISTORICAL_SYMBOLS.includes(symbol)) {
@@ -159,8 +170,8 @@ export function createAlphaVantageMiddleware({
       const clientKey = createHash('sha256').update(clientIp).digest('hex');
       let reservation;
       try {
-        if (providerBudgetStore) {
-          reservation = await providerBudgetStore.reserveClientRequest({ clientKey, windowMs: effectiveClientWindowMs, requestLimit: effectiveClientRequestLimit });
+        if (effectiveProviderBudgetStore) {
+          reservation = await effectiveProviderBudgetStore.reserveClientRequest({ clientKey, windowMs: effectiveClientWindowMs, requestLimit: effectiveClientRequestLimit });
         } else {
           const currentTime = now();
           for (const [key, entry] of clientRequests) if (entry.resetAt <= currentTime) clientRequests.delete(key);
@@ -198,7 +209,7 @@ export function createAlphaVantageMiddleware({
       try {
         const providerUrl = new URL('https://www.alphavantage.co/query');
         providerUrl.search = new URLSearchParams({ function: 'GLOBAL_QUOTE', symbol, apikey: apiKey }).toString();
-        const { upstream, providerPayload, budgetBlocked, retryAfterSeconds } = await fetchProviderOnce(inFlight, cacheKey, fetchImpl, providerUrl, providerBudget, providerBudgetStore);
+        const { upstream, providerPayload, budgetBlocked, retryAfterSeconds } = await fetchProviderOnce(inFlight, cacheKey, fetchImpl, providerUrl, providerBudget, effectiveProviderBudgetStore);
         if (budgetBlocked) {
           response.setHeader('Retry-After', String(retryAfterSeconds));
           return sendJson(response, 429, { status: 'rate_limited', message: 'Market-data provider request budget is temporarily exhausted. Please retry after the indicated delay.' });
@@ -265,7 +276,7 @@ export function createAlphaVantageMiddleware({
         outputsize: 'compact',
         apikey: apiKey,
       }).toString();
-      const { upstream, providerPayload, budgetBlocked, retryAfterSeconds } = await fetchProviderOnce(inFlight, 'daily:' + cacheKey, fetchImpl, providerUrl, providerBudget, providerBudgetStore);
+      const { upstream, providerPayload, budgetBlocked, retryAfterSeconds } = await fetchProviderOnce(inFlight, 'daily:' + cacheKey, fetchImpl, providerUrl, providerBudget, effectiveProviderBudgetStore);
       if (budgetBlocked) {
         response.setHeader('Retry-After', String(retryAfterSeconds));
         return sendJson(response, 429, { status: 'rate_limited', message: 'Market-data provider request budget is temporarily exhausted. Please retry after the indicated delay.' });
