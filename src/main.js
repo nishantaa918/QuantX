@@ -22,7 +22,7 @@ import {
 import { createReplayController } from './replay-controller.js';
 import { createSimulationController, createSyntheticSimulation } from './simulation-engine.js';
 import { analyzeStrategyBacktest, detectMarketRegimes, testMomentumHacFamily, testMomentumHypothesis } from './research-engine.js';
-import { runWalkForwardValidation } from './walk-forward.js';
+import { runWalkForwardCostSensitivity, runWalkForwardValidation } from './walk-forward.js';
 import { analyzeEqualWeightPortfolio, analyzePortfolioCostSensitivity } from './portfolio-research.js';
 import { createRequestVersion } from './request-version.js';
 
@@ -777,11 +777,15 @@ function renderBacktestingPage() {
     <section id="backtest-diagnostics">${renderDiagnosticsPanel(currentDiagnostics, 'Policy diagnostics', latestBacktest ?? currentBacktest)}</section>`;
 }
 
-function renderWalkForwardResults(result) {
+function renderWalkForwardResults(result, sensitivity = null) {
   if (!result?.valid) return `<p class="empty-state">${escapeHTML(result?.error ?? 'Run walk-forward validation to calculate out-of-sample results.')}</p>`;
   const foldRows = result.folds.map((fold) => `<tr><td>${fold.number}</td><td>${escapeHTML(fold.trainStart)} – ${escapeHTML(fold.trainEnd)}</td><td>${escapeHTML(fold.testStart)} – ${escapeHTML(fold.testEnd)}</td><td>MA ${fold.selectedParameters.shortWindow} / ${fold.selectedParameters.longWindow}</td><td class="mono-cell">${fold.trainingScore.toFixed(2)}</td><td class="mono-cell ${fold.testMetrics.totalReturn >= 0 ? 'is-positive' : 'is-negative'}">${fold.testMetrics.totalReturn >= 0 ? '+' : ''}${fold.testMetrics.totalReturn.toFixed(2)}%</td><td class="mono-cell">${fold.transactionCostsUSD.toFixed(2)}</td></tr>`).join('');
+  const sensitivityRows = sensitivity?.valid
+    ? sensitivity.scenarios.map((scenario) => `<tr><td>${escapeHTML(scenario.label)}</td><td class="mono-cell">${scenario.outOfSampleReturnPct >= 0 ? '+' : ''}${scenario.outOfSampleReturnPct.toFixed(2)}%</td><td class="mono-cell">${scenario.totalTransactionCostsUSD.toFixed(2)}</td><td class="mono-cell">${scenario.sharpeRatio.toFixed(2)}</td><td>${scenario.folds}</td></tr>`).join('')
+    : '';
   return `<div class="result-summary"><div><span>OUT-OF-SAMPLE RETURN</span><strong class="${result.metrics.totalReturn >= 0 ? 'is-positive' : 'is-negative'}">${result.metrics.totalReturn >= 0 ? '+' : ''}${result.metrics.totalReturn.toFixed(2)}%</strong></div><div><span>BUY & HOLD RETURN</span><strong>${result.benchmarkMetrics.totalReturn >= 0 ? '+' : ''}${result.benchmarkMetrics.totalReturn.toFixed(2)}%</strong></div><div><span>OOS SHARPE</span><strong>${result.metrics.sharpeRatio.toFixed(2)}</strong></div><div><span>ESTIMATED COSTS</span><strong>${result.totalTransactionCostsUSD.toFixed(2)}</strong></div></div>
     <div class="table-scroll"><table class="workspace-table walk-forward-table"><thead><tr><th>FOLD</th><th>TRAIN WINDOW</th><th>TEST WINDOW</th><th>SELECTED POLICY</th><th>TRAIN SCORE</th><th>TEST RETURN</th><th>TEST COSTS</th></tr></thead><tbody>${foldRows}</tbody></table></div>
+    ${sensitivityRows ? `<div><p class="section-kicker">EXECUTION-COST SENSITIVITY</p><div class="table-scroll"><table class="workspace-table"><thead><tr><th>SCENARIO</th><th>OOS RETURN</th><th>TRANSACTION COSTS</th><th>OOS SHARPE</th><th>FOLDS</th></tr></thead><tbody>${sensitivityRows}</tbody></table></div><p class="table-note">Each scenario reruns parameter selection and out-of-sample testing under its own cost assumptions; results are not a pure post-hoc cost subtraction.</p></div>` : ''}
     <p class="result-caption">${result.folds.length} completed folds / ${result.outOfSampleObservations} out-of-sample observations / ${result.candidateCount} candidate configurations per fold. Parameters are selected using training data only.</p>
     <p class="research-caveat">${result.caveats.map(escapeHTML).join(' ')}</p>`;
 }
@@ -1445,7 +1449,7 @@ secondaryView.addEventListener('click', (event) => {
     const testWindow = Number(document.querySelector('#walk-forward-test').value);
     const step = Number(document.querySelector('#walk-forward-step').value);
     const selectionMetric = document.querySelector('#walk-forward-objective').value;
-    const result = runWalkForwardValidation(sourceSeries, {
+    const sensitivity = runWalkForwardCostSensitivity(sourceSeries, {
       trainWindow,
       testWindow,
       step,
@@ -1453,7 +1457,8 @@ secondaryView.addEventListener('click', (event) => {
       baseParameters: strategyConfig,
       executionCosts,
     });
-    document.querySelector('#walk-forward-results').innerHTML = renderWalkForwardResults(result);
+    const result = sensitivity.valid ? sensitivity.configuredResult : sensitivity;
+    document.querySelector('#walk-forward-results').innerHTML = renderWalkForwardResults(result, sensitivity.valid ? sensitivity : null);
     showToast(result.valid ? `Walk-forward validation completed: ${result.folds.length} folds.` : 'Walk-forward validation could not be completed.');
   }
   if (action === 'run-portfolio-research') {
