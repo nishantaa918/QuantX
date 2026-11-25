@@ -21,6 +21,15 @@ async function fetchProviderOnce(inFlight, key, fetchImpl, providerUrl) {
   }
 }
 
+
+function pruneExpiredCache(cache, currentTime) {
+  for (const [key, entry] of cache) {
+    if (!entry || !Number.isFinite(entry.expiresAt) || entry.expiresAt <= currentTime) {
+      cache.delete(key);
+    }
+  }
+}
+
 function isValidIsoDate(value) {
   if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
   const date = new Date(`${value}T00:00:00.000Z`);
@@ -64,6 +73,8 @@ export function createAlphaVantageMiddleware({
     if (isDaily && !['raw', 'adjusted'].includes(adjustment)) {
       return sendJson(response, 400, { status: 'error', message: 'Adjustment must be raw or adjusted.' });
     }
+    pruneExpiredCache(cache, now());
+
     if (!apiKey) {
       return sendJson(response, 503, { status: 'unavailable', message: 'Historical data is unavailable: the server-side Alpha Vantage key is not configured.' });
     }
