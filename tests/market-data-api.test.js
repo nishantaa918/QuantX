@@ -803,3 +803,39 @@ async function requestForSymbol(handler, symbol) {
   await handler({ method: 'GET', url: `/api/market-data/quote?symbol=${symbol}` }, response);
   return response.result();
 }
+
+test('quote refresh bypasses a fresh cache entry and replaces it for subsequent reads', async () => {
+  let calls = 0;
+  const handler = createMarketDataApiHandler({
+    apiKey: 'quote-refresh-cache-key',
+    providerRequestLimit: 3,
+    fetchImpl: async () => {
+      calls += 1;
+      return { ok: true, json: async () => validQuote('AAPL', 200 + calls) };
+    },
+  });
+  const request = async (url) => {
+    const response = responseRecorder();
+    await handler({ method: 'GET', url }, response);
+    return response.result();
+  };
+
+  const initial = await request('/api/market-data/quote?symbol=AAPL');
+  assert.equal(initial.status, 200);
+  assert.equal(initial.body.data.price, 201);
+
+  const cached = await request('/api/market-data/quote?symbol=AAPL');
+  assert.equal(cached.status, 200);
+  assert.equal(cached.body.data.price, 201);
+  assert.equal(calls, 1, 'ordinary reads should reuse the fresh quote cache');
+
+  const refreshed = await request('/api/market-data/quote?symbol=AAPL&refresh=1');
+  assert.equal(refreshed.status, 200);
+  assert.equal(refreshed.body.data.price, 202);
+  assert.equal(calls, 2, 'an explicit refresh should make a new provider request');
+
+  const afterRefresh = await request('/api/market-data/quote?symbol=AAPL');
+  assert.equal(afterRefresh.status, 200);
+  assert.equal(afterRefresh.body.data.price, 202);
+  assert.equal(calls, 2, 'the refreshed snapshot should replace the previous cache entry');
+});
