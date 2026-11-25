@@ -674,3 +674,130 @@ test('cache lifecycle remains bounded across every allowlisted symbol and prunes
   assert.equal((await request('/api/market-data/daily?symbol=MSFT&adjustment=raw')).status, 200);
   assert.equal(calls, symbols.length * 3 + 2, 'expired daily entry should also be refetched after cleanup');
 });
+
+
+test('provider request budget is shared across quote and daily routes', async () => {
+  let calls = 0;
+  const handler = createMarketDataApiHandler({
+    apiKey: 'provider-budget-key',
+    now: () => 1_800_000_000_000,
+    providerRequestLimit: 2,
+    fetchImpl: async (url) => {
+      calls += 1;
+      const params = new URL(url).searchParams;
+      if (params.get('function') === 'GLOBAL_QUOTE') {
+        return { ok: true, json: async () => validQuote(params.get('symbol'), 200) };
+      }
+      return { ok: true, json: async () => dailyProviderPayload(params.get('symbol')) };
+    },
+  });
+  const request = async (url) => {
+    const response = responseRecorder();
+    await handler({ method: 'GET', url }, response);
+    return response.result();
+  };
+
+  assert.equal((await request('/api/market-data/quote?symbol=AAPL')).status, 200);
+  assert.equal((await request('/api/market-data/daily?symbol=MSFT')).status, 200);
+  const blocked = await request('/api/market-data/daily?symbol=NVDA');
+  assert.equal(blocked.status, 429);
+  assert.equal(blocked.body.status, 'rate_limited');
+  assert.equal(Number(blocked.headers['Retry-After']), 86400);
+  assert.equal(calls, 2, 'the local daily budget must cover both endpoint types');
+});
+
+test('cached responses do not consume the provider request budget', async () => {
+  let calls = 0;
+  const handler = createMarketDataApiHandler({
+    apiKey: 'provider-cache-budget-key',
+    providerRequestLimit: 1,
+    fetchImpl: async () => {
+      calls += 1;
+      return { ok: true, json: async () => validQuote('AAPL', 200) };
+    },
+  });
+  const request = async (url) => {
+    const response = responseRecorder();
+    await handler({ method: 'GET', url }, response);
+    return response.result();
+  };
+
+  assert.equal((await request('/api/market-data/quote?symbol=AAPL')).status, 200);
+  assert.equal((await request('/api/market-data/quote?symbol=AAPL')).status, 200);
+  const blocked = await request('/api/market-data/quote?symbol=MSFT');
+  assert.equal(blocked.status, 429);
+  assert.equal(calls, 1, 'cache hits must not spend provider request capacity');
+});
+
+test('provider rate-limit responses activate a shared cooldown across quote and daily routes', async () => {
+  let clock = 1_800_000_000_000;
+  let calls = 0;
+  const handler = createMarketDataApiHandler({
+    apiKey: 'provider-cooldown-key',
+    now: () => clock,
+    providerRateLimitCooldownMs: 5_000,
+    fetchImpl: async (url) => {
+      calls += 1;
+      const params = new URL(url).searchParams;
+      if (calls === 1) {
+        return { ok: true, json: async () => ({ Note: 'API call frequency limit reached.' }) };
+      }
+      return { ok: true, json: async () => dailyProviderPayload(params.get('symbol')) };
+    },
+  });
+  const request = async (url) => {
+    const response = responseRecorder();
+    await handler({ method: 'GET', url }, response);
+    return response.result();
+  };
+
+  const providerLimited = await request('/api/market-data/quote?symbol=AAPL');
+  assert.equal(providerLimited.status, 429);
+  assert.equal(providerLimited.headers['Retry-After'], '5');
+
+  const duringCooldown = await request('/api/market-data/daily?symbol=MSFT');
+  assert.equal(duringCooldown.status, 429);
+  assert.equal(duringCooldown.headers['Retry-After'], '5');
+  assert.equal(calls, 1, 'the second route must not call the provider during cooldown');
+
+  clock += 5_001;
+  const afterCooldown = await request('/api/market-data/daily?symbol=MSFT');
+  assert.equal(afterCooldown.status, 200);
+  assert.equal(calls, 2, 'provider requests may resume after the configured cooldown');
+});
+
+test('concurrent duplicate requests spend only one provider budget unit', async () => {
+  let calls = 0;
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  const handler = createMarketDataApiHandler({
+    apiKey: 'provider-single-budget-key',
+    providerRequestLimit: 1,
+    fetchImpl: async () => {
+      calls += 1;
+      await gate;
+      return { ok: true, json: async () => validQuote('AAPL', 200) };
+    },
+  });
+  const request = async () => {
+    const response = responseRecorder();
+    await handler({ method: 'GET', url: '/api/market-data/quote?symbol=AAPL' }, response);
+    return response.result();
+  };
+
+  const first = request();
+  const second = request();
+  release();
+  const [a, b] = await Promise.all([first, second]);
+  assert.equal(a.status, 200);
+  assert.equal(b.status, 200);
+  assert.equal(calls, 1);
+  const otherSymbol = await requestForSymbol(handler, 'MSFT');
+  assert.equal(otherSymbol.status, 429, 'the shared request should consume exactly one budget unit');
+});
+
+async function requestForSymbol(handler, symbol) {
+  const response = responseRecorder();
+  await handler({ method: 'GET', url: `/api/market-data/quote?symbol=${symbol}` }, response);
+  return response.result();
+}
