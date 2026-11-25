@@ -42,6 +42,16 @@ redis.call('SET', KEYS[1], '1', 'PX', ttl)
 return ttl
 `;
 
+function parseReservationResult(result) {
+  if (!Array.isArray(result) || result.length < 2) throw new ProviderBudgetStorageError();
+  const decision = Number(result[0]);
+  const retryMs = Number(result[1]);
+  if (![0, 1].includes(decision) || !Number.isFinite(retryMs) || retryMs < 0) {
+    throw new ProviderBudgetStorageError();
+  }
+  return decision === 1;
+}
+
 export class ProviderBudgetStorageError extends Error {
   constructor(message = 'Persistent provider budget storage is unavailable.') {
     super(message);
@@ -108,8 +118,7 @@ export function createUpstashProviderBudgetStore({
         String(requestLimit),
         String(requestId ?? `${timestamp}:${Math.random().toString(36).slice(2)}`),
       ]);
-      if (!Array.isArray(result) || result.length < 2) throw new ProviderBudgetStorageError();
-      const allowed = Number(result[0]) === 1;
+      const allowed = parseReservationResult(result);
       return {
         allowed,
         retryAfterSeconds: allowed ? 0 : Math.max(1, Math.ceil(Number(result[1]) / 1000)),
@@ -125,8 +134,7 @@ export function createUpstashProviderBudgetStore({
         String(requestLimit),
         String(windowMs),
       ]);
-      if (!Array.isArray(result) || result.length < 2) throw new ProviderBudgetStorageError();
-      const allowed = Number(result[0]) === 1;
+      const allowed = parseReservationResult(result);
       return {
         allowed,
         retryAfterSeconds: allowed ? 0 : Math.max(1, Math.ceil(Number(result[1]) / 1000)),

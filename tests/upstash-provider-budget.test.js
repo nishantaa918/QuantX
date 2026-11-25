@@ -202,3 +202,44 @@ test('partial Upstash environment configuration returns a safe 503 instead of cr
     else process.env.UPSTASH_REDIS_REST_TOKEN = previousToken;
   }
 });
+
+
+test('Upstash adapter rejects malformed provider-budget reservation decisions', async () => {
+  const malformedResults = [null, [], [2, 0], [0, 'not-a-number'], [0, -1]];
+  for (const result of malformedResults) {
+    const store = createUpstashProviderBudgetStore({
+      url: 'https://example.upstash.io',
+      token: 'server-secret',
+      fetchImpl: async () => ({ ok: true, json: async () => ({ result }) }),
+    });
+    await assert.rejects(
+      store.reserveRequest({ windowMs: 10000, requestLimit: 1, requestId: 'malformed' }),
+      { name: 'ProviderBudgetStorageError' },
+      `malformed provider reservation should fail closed: ${JSON.stringify(result)}`,
+    );
+    await assert.rejects(
+      store.reserveClientRequest({ clientKey: 'sha256-digest', windowMs: 60000, requestLimit: 60 }),
+      { name: 'ProviderBudgetStorageError' },
+    );
+  }
+});
+
+test('Upstash adapter rejects unreadable and unsuccessful REST responses', async () => {
+  const storeWith = (fetchImpl) => createUpstashProviderBudgetStore({
+    url: 'https://example.upstash.io',
+    token: 'server-secret',
+    fetchImpl,
+  });
+  const cases = [
+    async () => ({ ok: false, json: async () => ({ result: [1, 0] }) }),
+    async () => ({ ok: true, json: async () => { throw new SyntaxError('private response detail'); } }),
+    async () => ({ ok: true, json: async () => ({ error: 'private server detail' }) }),
+    async () => ({ ok: true, json: async () => ({}) }),
+  ];
+  for (const fetchImpl of cases) {
+    await assert.rejects(
+      storeWith(fetchImpl).reserveRequest({ windowMs: 10000, requestLimit: 1, requestId: 'invalid-response' }),
+      { name: 'ProviderBudgetStorageError' },
+    );
+  }
+});
