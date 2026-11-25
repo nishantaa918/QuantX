@@ -162,10 +162,17 @@ export function calculateStrategyBacktest(series, parameters = DEFAULT_STRATEGY,
   const validation = validateStrategyParameters(parameters);
   const costValidation = validateExecutionCosts(executionCosts);
   const values = series?.values;
-  if (!validation.valid || !costValidation.valid || !finiteSeries(values) || !Number.isFinite(startingCapital) || startingCapital <= 0) {
+  const volumeImpactSeriesValid = costValidation.config.slippageModel !== 'volume-impact'
+    || (Array.isArray(series?.observations) && series.observations.length === values?.length
+      && series.observations.every((observation) => {
+        const close = observation?.rawClose ?? observation?.close;
+        return [close, observation?.high, observation?.low, observation?.volume].every(Number.isFinite)
+          && close > 0 && observation.high >= observation.low && observation.volume > 0;
+      }));
+  if (!validation.valid || !costValidation.valid || !finiteSeries(values) || !Number.isFinite(startingCapital) || startingCapital <= 0 || !volumeImpactSeriesValid) {
     return {
       valid: false,
-      errors: [...validation.errors, ...costValidation.errors, ...(!finiteSeries(values) ? ['Price history must contain at least two finite positive observations.'] : []), ...(!Number.isFinite(startingCapital) || startingCapital <= 0 ? ['Starting capital must be greater than zero.'] : [])],
+      errors: [...validation.errors, ...costValidation.errors, ...(!finiteSeries(values) ? ['Price history must contain at least two finite positive observations.'] : []), ...(!Number.isFinite(startingCapital) || startingCapital <= 0 ? ['Starting capital must be greater than zero.'] : []), ...(!volumeImpactSeriesValid ? ['Volume-impact slippage requires aligned historical OHLCV observations with positive volume and valid prior-session ranges.'] : [])],
       metrics: null,
       grossMetrics: null,
       equityCurve: [],
@@ -177,6 +184,7 @@ export function calculateStrategyBacktest(series, parameters = DEFAULT_STRATEGY,
       dailyReturns: [],
       grossDailyReturns: [],
       transactionCostsUSD: [],
+      slippageEstimatesBps: [],
       totalTransactionCostsUSD: null,
       totalTurnover: null,
       tradeCount: null,
@@ -221,9 +229,6 @@ export function calculateStrategyBacktest(series, parameters = DEFAULT_STRATEGY,
     const impact = costValidation.config.slippageModel === 'volume-impact' && turnover > 0
       ? estimateVolumeImpactBps(series, index, tradedNotional, costValidation.config.impactCoefficient ?? 0.1)
       : { valid: true, slippageBps: costValidation.config.slippageModel === 'volume-impact' ? 0 : costValidation.config.slippageBps };
-    if (!impact.valid) {
-      throw new Error(impact.error);
-    }
     slippageEstimatesBps.push(impact.slippageBps);
     const costRate = turnover * (costValidation.config.commissionBps + impact.slippageBps) / 10_000;
     const netSessionReturn = grossSessionReturn - costRate;
@@ -255,6 +260,7 @@ export function calculateStrategyBacktest(series, parameters = DEFAULT_STRATEGY,
     dailyReturns,
     grossDailyReturns,
     transactionCostsUSD,
+    slippageEstimatesBps,
     totalTransactionCostsUSD: transactionCostsUSD.reduce((sum, value) => sum + value, 0),
     totalTurnover,
     tradeCount,
