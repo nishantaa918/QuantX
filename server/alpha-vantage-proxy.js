@@ -120,11 +120,12 @@ export function createAlphaVantageMiddleware({
   providerRequestLimit = Number(process.env.ALPHA_VANTAGE_DAILY_REQUEST_LIMIT) || 25,
   providerWindowMs = PROVIDER_REQUEST_WINDOW_MS,
   providerRateLimitCooldownMs = PROVIDER_RATE_LIMIT_COOLDOWN_MS,
-  effectiveProviderBudgetStore,
+  providerBudgetStore,
   clientRequestLimit = Number(process.env.QUANTX_CLIENT_REQUEST_LIMIT) || CLIENT_RATE_LIMIT_DEFAULT,
   clientRateLimitWindowMs = CLIENT_RATE_LIMIT_WINDOW_MS,
   logger = process.env.VERCEL === '1' ? console : null,
 } = {}) {
+  let effectiveProviderBudgetStore = providerBudgetStore;
   let providerBudgetStoreInitializationFailed = false;
   if (effectiveProviderBudgetStore === undefined) {
     try {
