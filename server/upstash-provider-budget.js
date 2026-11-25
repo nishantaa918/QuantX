@@ -21,6 +21,21 @@ redis.call('PEXPIRE', KEYS[1], windowMs + 1000)
 return {1, 0}
 `;
 
+const CLIENT_RATE_LIMIT_SCRIPT = `
+local limit = tonumber(ARGV[1])
+local windowMs = tonumber(ARGV[2])
+local count = tonumber(redis.call('GET', KEYS[1]) or '0')
+if count >= limit then
+  local ttl = redis.call('PTTL', KEYS[1])
+  if ttl < 1 then ttl = windowMs end
+  return {0, ttl}
+end
+count = redis.call('INCR', KEYS[1])
+if count == 1 then redis.call('PEXPIRE', KEYS[1], windowMs) end
+local ttl = redis.call('PTTL', KEYS[1])
+return {1, ttl}
+`;
+
 const COOLDOWN_SCRIPT = `
 local ttl = tonumber(ARGV[1])
 redis.call('SET', KEYS[1], '1', 'PX', ttl)
@@ -49,6 +64,7 @@ export function createUpstashProviderBudgetStore({
   const endpoint = url.replace(/\/+$/, '');
   const budgetKey = `${keyPrefix}:requests`;
   const cooldownKey = `${keyPrefix}:cooldown`;
+  const clientRateLimitPrefix = 'quantx:client-rate-limit:v1';
 
   async function execute(command) {
     let response;
@@ -91,6 +107,23 @@ export function createUpstashProviderBudgetStore({
         String(windowMs),
         String(requestLimit),
         String(requestId ?? `${timestamp}:${Math.random().toString(36).slice(2)}`),
+      ]);
+      if (!Array.isArray(result) || result.length < 2) throw new ProviderBudgetStorageError();
+      const allowed = Number(result[0]) === 1;
+      return {
+        allowed,
+        retryAfterSeconds: allowed ? 0 : Math.max(1, Math.ceil(Number(result[1]) / 1000)),
+      };
+    },
+
+    async reserveClientRequest({ clientKey, windowMs, requestLimit }) {
+      const result = await execute([
+        'EVAL',
+        CLIENT_RATE_LIMIT_SCRIPT,
+        '1',
+        `${clientRateLimitPrefix}:${clientKey}`,
+        String(requestLimit),
+        String(windowMs),
       ]);
       if (!Array.isArray(result) || result.length < 2) throw new ProviderBudgetStorageError();
       const allowed = Number(result[0]) === 1;
