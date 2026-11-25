@@ -74,6 +74,8 @@ test('walk-forward transaction costs are scaled to stitched out-of-sample capita
 
   let stitchedCapital = 100_000;
   let expectedTotalCosts = 0;
+  let previousOutOfSampleExposure = 0;
+  let observedBoundaryRebalanceDifference = false;
   for (const fold of result.folds) {
     const testStart = series.labels.indexOf(fold.testStart);
     const testEnd = series.labels.indexOf(fold.testEnd) + 1;
@@ -82,20 +84,32 @@ test('walk-forward transaction costs are scaled to stitched out-of-sample capita
       values: series.values.slice(0, testEnd),
     };
     const backtest = calculateStrategyBacktest(prefix, fold.selectedParameters, 100_000, executionCosts);
+    const firstTestExposure = backtest.exposures[testStart - 1] / 100;
+    const firstTestTurnover = Math.abs(firstTestExposure - previousOutOfSampleExposure);
+    const sameStrategyTurnover = Math.abs(firstTestExposure - backtest.exposures[testStart - 2] / 100);
+    if (Math.abs(firstTestTurnover - sameStrategyTurnover) > 1e-12) observedBoundaryRebalanceDifference = true;
+    const firstTestCostRate = firstTestTurnover * (executionCosts.commissionBps + executionCosts.slippageBps) / 10_000;
     let expectedFoldCosts = 0;
 
     for (let index = testStart; index < testEnd; index += 1) {
       const prefixEquity = backtest.equityCurve[index - 1];
-      const costFraction = backtest.transactionCostsUSD[index] / prefixEquity;
+      const costFraction = index === testStart
+        ? firstTestCostRate
+        : backtest.transactionCostsUSD[index] / prefixEquity;
       const cost = stitchedCapital * costFraction;
       expectedFoldCosts += cost;
       expectedTotalCosts += cost;
-      stitchedCapital *= 1 + backtest.dailyReturns[index];
+      const dailyReturn = index === testStart
+        ? backtest.grossDailyReturns[index] - firstTestCostRate
+        : backtest.dailyReturns[index];
+      stitchedCapital *= 1 + dailyReturn;
     }
 
+    previousOutOfSampleExposure = backtest.exposures[testEnd - 2] / 100;
     assert.ok(Math.abs(fold.transactionCostsUSD - expectedFoldCosts) < 1e-8);
   }
 
+  assert.equal(observedBoundaryRebalanceDifference, true);
   assert.ok(Math.abs(result.totalTransactionCostsUSD - expectedTotalCosts) < 1e-8);
 });
 
