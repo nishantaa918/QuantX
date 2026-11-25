@@ -42,6 +42,10 @@ If Alpha Vantage has explicitly confirmed a different allowance for this educati
 6. Confirm the response status, provider trading date, and retrieval timestamp before relying on displayed data.
 7. Respect provider rate limits; repeated refreshes can be throttled. Do not interpret a quote snapshot as a live tick stream.
 
+## API monitoring and logs
+
+On Vercel, market-data requests emit one structured JSON log entry per response. Entries include the route, HTTP method, status code, and duration, with severity based on the status. They intentionally omit client IP addresses, query strings, symbols, provider payloads, and credentials. Logging failures never block API responses. These events are available through the deployment's function logs; no paid third-party monitoring service is required for this initial setup.
+
 ## API health check
 
 The deployment exposes a lightweight liveness endpoint at `/api/health`. It supports GET, returns a minimal service status and timestamp, and does not disclose API-key or storage configuration. It is a liveness check only; it does not make upstream provider calls or guarantee that external market-data services are available.
