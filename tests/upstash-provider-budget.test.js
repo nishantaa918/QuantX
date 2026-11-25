@@ -243,3 +243,28 @@ test('Upstash adapter rejects unreadable and unsuccessful REST responses', async
     );
   }
 });
+
+
+test('Upstash adapter refuses insecure or ambiguous endpoints before sending credentials', async () => {
+  const invalidUrls = [
+    'http://example.upstash.io',
+    'not-a-url',
+    'https://user:password@example.upstash.io',
+    'https://example.upstash.io/path',
+    'https://example.upstash.io/?redirect=elsewhere',
+    'https://example.upstash.io/#fragment',
+  ];
+  for (const url of invalidUrls) {
+    let calls = 0;
+    assert.throws(
+      () => createUpstashProviderBudgetStore({
+        url,
+        token: 'server-secret',
+        fetchImpl: async () => { calls += 1; },
+      }),
+      { name: 'ProviderBudgetStorageError' },
+      `endpoint should be rejected: ${url}`,
+    );
+    assert.equal(calls, 0, 'invalid endpoints must be rejected before any request is sent');
+  }
+});
