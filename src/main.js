@@ -22,7 +22,7 @@ import { createReplayController } from './replay-controller.js';
 import { createSimulationController, createSyntheticSimulation } from './simulation-engine.js';
 import { analyzeStrategyBacktest, detectMarketRegimes, testMomentumHacFamily, testMomentumHypothesis } from './research-engine.js';
 import { runWalkForwardValidation } from './walk-forward.js';
-import { analyzeEqualWeightPortfolio } from './portfolio-research.js';
+import { analyzeEqualWeightPortfolio, analyzePortfolioCostSensitivity } from './portfolio-research.js';
 import { createRequestVersion } from './request-version.js';
 
 const STORAGE_KEY = 'quantx.midnight.experiments';
@@ -824,8 +824,12 @@ function renderPortfolioResearchResults(result) {
   const assetRows = result.assetStats.map((asset) => `<tr><td>${escapeHTML(asset.symbol)}</td><td class="mono-cell">${asset.weightPct.toFixed(1)}%</td><td class="mono-cell ${asset.totalReturnPct >= 0 ? 'is-positive' : 'is-negative'}">${asset.totalReturnPct >= 0 ? '+' : ''}${asset.totalReturnPct.toFixed(2)}%</td><td class="mono-cell">${asset.annualizedVolatilityPct.toFixed(2)}%</td></tr>`).join('');
   const matrixHead = result.symbols.map((symbol) => `<th>${escapeHTML(symbol)}</th>`).join('');
   const matrixRows = result.correlationMatrix.map((row) => `<tr><th>${escapeHTML(row.symbol)}</th>${row.values.map((value) => `<td class="mono-cell">${value === null ? '—' : value.toFixed(2)}</td>`).join('')}</tr>`).join('');
+  const sensitivityRows = result.costSensitivity?.valid
+    ? result.costSensitivity.scenarios.map((scenario) => `<tr><td>${escapeHTML(scenario.label)}</td><td class="mono-cell">${scenario.netReturnPct >= 0 ? '+' : ''}${scenario.netReturnPct.toFixed(2)}%</td><td class="mono-cell">${scenario.costDragPct.toFixed(2)}%</td><td class="mono-cell">${scenario.totalTransactionCostsUSD.toFixed(2)}</td></tr>`).join('')
+    : '';
   return `<div class="result-summary"><div><span>NET PORTFOLIO RETURN</span><strong class="${result.metrics.totalReturnPct >= 0 ? 'is-positive' : 'is-negative'}">${result.metrics.totalReturnPct >= 0 ? '+' : ''}${result.metrics.totalReturnPct.toFixed(2)}%</strong></div><div><span>GROSS RETURN</span><strong>${result.grossMetrics.totalReturnPct >= 0 ? '+' : ''}${result.grossMetrics.totalReturnPct.toFixed(2)}%</strong></div><div><span>ANNUALIZED VOLATILITY</span><strong>${result.metrics.annualizedVolatilityPct.toFixed(2)}%</strong></div><div><span>SHARPE / 0% RF</span><strong>${result.metrics.sharpeRatio === null ? '—' : result.metrics.sharpeRatio.toFixed(2)}</strong></div><div><span>MAX DRAWDOWN</span><strong>${result.metrics.maxDrawdownPct.toFixed(2)}%</strong></div><div><span>DIVERSIFICATION BENEFIT</span><strong>${result.metrics.diversificationBenefitPct === null ? '—' : result.metrics.diversificationBenefitPct.toFixed(2) + '%'}</strong></div></div>
     <p class="result-caption">${result.symbols.length} assets / ${result.observations} common price dates / ${result.returnObservations} return intervals / ${result.priceBasis.toUpperCase()} prices. Equal weights are reset at each shared observation. Estimated rebalance costs: ${result.totalTransactionCostsUSD.toFixed(2)} across ${result.totalTurnover.toFixed(3)}x turnover. Asset rows show gross standalone returns; portfolio metrics include rebalance costs.</p>
+    ${sensitivityRows ? `<div><p class="section-kicker">EXECUTION-COST SENSITIVITY</p><div class="table-scroll"><table class="workspace-table"><thead><tr><th>SCENARIO</th><th>NET RETURN</th><th>COST DRAG</th><th>TRANSACTION COSTS</th></tr></thead><tbody>${sensitivityRows}</tbody></table></div><p class="table-note">Zero-cost, configured, and 2× stressed assumptions. This is a sensitivity check, not a forecast.</p></div>` : ''}
     <div class="portfolio-research-grid"><div><p class="section-kicker">ASSET CONTRIBUTION INPUTS</p><div class="table-scroll"><table class="workspace-table"><thead><tr><th>ASSET</th><th>WEIGHT</th><th>ASSET GROSS RETURN</th><th>ANNUALIZED VOL</th></tr></thead><tbody>${assetRows}</tbody></table></div></div><div><p class="section-kicker">INTERVAL RETURN CORRELATION</p><div class="table-scroll"><table class="workspace-table correlation-table"><thead><tr><th></th>${matrixHead}</tr></thead><tbody>${matrixRows}</tbody></table></div></div></div>
     <p class="research-caveat">${result.caveats.map(escapeHTML).join(' ')}</p>`;
 }
@@ -1448,9 +1452,11 @@ secondaryView.addEventListener('click', (event) => {
     showToast(result.valid ? `Walk-forward validation completed: ${result.folds.length} folds.` : 'Walk-forward validation could not be completed.');
   }
   if (action === 'run-portfolio-research') {
-    const result = analyzeEqualWeightPortfolio(getPortfolioResearchAssets(), { executionCosts });
+    const assets = getPortfolioResearchAssets();
+    const result = analyzeEqualWeightPortfolio(assets, { executionCosts });
+    const costSensitivity = analyzePortfolioCostSensitivity(assets, { executionCosts });
     const output = document.querySelector('#portfolio-research-results');
-    if (output) output.innerHTML = renderPortfolioResearchResults(result);
+    if (output) output.innerHTML = renderPortfolioResearchResults({ ...result, costSensitivity });
     showToast(result.valid ? 'Cross-asset portfolio analysis completed.' : 'Portfolio analysis could not be completed.');
   }
   if (action === 'run-research-analysis') runResearchAnalysis();
