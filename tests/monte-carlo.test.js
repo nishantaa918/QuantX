@@ -94,3 +94,23 @@ test('Monte Carlo rejects numerically invalid returns before resampling', () => 
   }
 });
 
+test('Monte Carlo validates unsigned 32-bit seeds and accepts both boundaries', () => {
+  for (const seed of [-1, 1.5, Number.NaN, Number.POSITIVE_INFINITY, 0x1_0000_0000, '7']) {
+    const result = runMonteCarlo(100, 1, history, seed);
+    assert.equal(result.valid, false);
+    assert.equal(result.error, 'Seed must be an unsigned 32-bit integer (0 to 4294967295).');
+  }
+
+  assert.equal(runMonteCarlo(100, 1, history, 0).valid, true);
+  assert.equal(runMonteCarlo(100, 1, history, 0xffff_ffff).valid, true);
+});
+
+test('different valid seeds produce different Monte Carlo scenario distributions', () => {
+  const first = runMonteCarlo(250, 1, history, 123);
+  const second = runMonteCarlo(250, 1, history, 124);
+  assert.equal(first.valid, true);
+  assert.equal(second.valid, true);
+  assert.notDeepEqual(first, second);
+  assert.notEqual(first.median, second.median);
+});
+
