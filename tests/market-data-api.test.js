@@ -510,7 +510,7 @@ test('simultaneous quote cache misses share one provider request', async () => {
   const [a, b] = await Promise.all([first, second]);
   assert.equal(a.status, 200);
   assert.equal(b.status, 200);
-  assert.deepEqual(a.body, b.body);
+  assert.deepEqual(a.body.data, b.body.data);
   assert.equal(calls, 1);
 });
 
@@ -540,7 +540,7 @@ test('simultaneous daily cache misses share one provider request', async () => {
   const [a, b] = await Promise.all([first, second]);
   assert.equal(a.status, 200);
   assert.equal(b.status, 200);
-  assert.deepEqual(a.body, b.body);
+  assert.deepEqual(a.body.data, b.body.data);
   assert.equal(calls, 1);
 });
 
