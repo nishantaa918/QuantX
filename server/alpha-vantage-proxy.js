@@ -77,6 +77,32 @@ function getClientIp(request) {
   return isIP(candidate) ? candidate : '';
 }
 
+function attachRequestLogging(request, response, requestUrl, startedAt, now, logger) {
+  if (!logger || typeof response.end !== 'function') return;
+  const originalEnd = response.end.bind(response);
+  let logged = false;
+  response.end = (body) => {
+    if (!logged) {
+      logged = true;
+      const status = Number(response.statusCode) || 200;
+      const event = {
+        event: 'quantx_market_data_request',
+        route: requestUrl.pathname,
+        method: request.method,
+        status,
+        durationMs: Math.max(0, now() - startedAt),
+      };
+      const level = status >= 500 ? 'error' : status >= 400 ? 'warn' : 'info';
+      try {
+        if (typeof logger[level] === 'function') logger[level](JSON.stringify(event));
+      } catch {
+        // Logging must never prevent an API response from completing.
+      }
+    }
+    return originalEnd(body);
+  };
+}
+
 function sendJson(response, status, payload) {
   response.statusCode = status;
   response.setHeader('Content-Type', 'application/json; charset=utf-8');
@@ -97,6 +123,7 @@ export function createAlphaVantageMiddleware({
   providerBudgetStore = createUpstashProviderBudgetStore(),
   clientRequestLimit = Number(process.env.QUANTX_CLIENT_REQUEST_LIMIT) || CLIENT_RATE_LIMIT_DEFAULT,
   clientRateLimitWindowMs = CLIENT_RATE_LIMIT_WINDOW_MS,
+  logger = process.env.VERCEL === '1' ? console : null,
 } = {}) {
   const cache = new Map();
   const inFlight = new Map();
@@ -116,6 +143,7 @@ export function createAlphaVantageMiddleware({
     const isDaily = requestUrl.pathname === DAILY_ROUTE;
     const isQuote = requestUrl.pathname === QUOTE_ROUTE;
     if (!isDaily && !isQuote) return next();
+    attachRequestLogging(request, response, requestUrl, now(), now, logger);
     if (request.method !== 'GET') return sendJson(response, 405, { status: 'error', message: 'Use GET for market data.' });
     const symbol = (requestUrl.searchParams.get('symbol') ?? 'AAPL').trim().toUpperCase();
     const adjustment = (requestUrl.searchParams.get('adjustment') ?? 'raw').trim().toLowerCase();
