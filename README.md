@@ -18,26 +18,27 @@ The Vite development and preview middleware serves both `/api/market-data/daily`
 
 ### Vercel deployment
 
-Add `ALPHA_VANTAGE_API_KEY` under the project's server-side environment variables for the environments where market data should be available, then redeploy. Both production endpoints are implemented as Vercel serverless functions: `api/market-data/daily.js` and `api/market-data/quote.js`. Never add the key to a `VITE_*` variable or commit it to the repository.
+Add `ALPHA_VANTAGE_API_KEY` under the project's server-side environment variables for the environments where market data should be available, then redeploy. Both production endpoints are implemented as Vercel serverless functions: `api/market-data/daily.js` and `api/market-data/quote.js`. Never add the key to a `VITE_*` variable or commit it to the repository. For shared quota enforcement across serverless instances, also configure `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN` as server-only environment variables. The standard Upstash REST token has write access and must never be exposed to browser code.
 
 If the key is absent, both provider endpoints return a clear `503 unavailable` response. Synthetic backtesting and research continue to work without a provider key.
 
 ### Provider request budgeting
 
-The proxy applies a conservative default of 25 upstream requests per rolling 24-hour window per middleware instance, matching Alpha Vantage's published standard free-service allowance. A successful cache hit and a coalesced in-flight request do not spend another request. When Alpha Vantage returns its rate-limit `Note`, the proxy pauses new provider requests for 60 seconds and returns HTTP 429 with a `Retry-After` header. The pause is a short backoff, not a claim that the provider's daily quota resets after 60 seconds.
+The proxy applies a conservative default of 25 upstream requests per rolling 24-hour window. When both Upstash variables are configured, a short atomic Redis Lua operation reserves requests and stores the provider cooldown across separate Vercel serverless instances. A successful cache hit and a coalesced in-flight request do not spend another provider request. When Alpha Vantage returns its rate-limit `Note`, the proxy stores a shared cooldown and returns HTTP 429 with a `Retry-After` header. The pause is a short backoff, not a claim that the provider's daily quota resets after 60 seconds. If shared storage is configured but unavailable, provider requests fail closed with HTTP 503 rather than silently falling back to per-instance counters.
 
 If Alpha Vantage has explicitly confirmed a different allowance for this educational/open-source project, set the server-side `ALPHA_VANTAGE_DAILY_REQUEST_LIMIT` variable accordingly. Do not increase it based only on assumptions.
 
-**Deployment limitation:** this in-memory budget is best-effort and scoped to one warm middleware instance. Vercel's daily and quote functions, as well as separate serverless instances, may not share that memory. It is therefore not a global quota guarantee. A durable shared counter (for example, a configured shared KV/Redis service) is required before treating the budget as an account-wide cap under multi-instance deployment.
+**Deployment limitation:** without both Upstash environment variables, the proxy falls back to the existing in-memory best-effort budget, which is scoped to one warm middleware instance and is not a global quota guarantee. With shared storage configured, the counter is global to the configured Redis database and key prefix, subject to the provider key being used only by this QuantX deployment. Keep the Redis database private and do not reuse its token in client-side code.
 
 ### Provider setup checklist
 
 1. Obtain an Alpha Vantage API key and confirm the account plan supports the endpoints you intend to use.
 2. Set `ALPHA_VANTAGE_API_KEY` in the server environment (locally in an ignored `.env` file; in production in the host's encrypted environment-variable settings).
-3. Restart the local dev server after changing `.env`.
-4. Check `/api/market-data/daily?symbol=AAPL&adjustment=raw` and `/api/market-data/quote?symbol=AAPL`.
-5. Confirm the response status, provider trading date, and retrieval timestamp before relying on displayed data.
-6. Respect provider rate limits; repeated refreshes can be throttled. Do not interpret a quote snapshot as a live tick stream.
+3. Create/configure a private Upstash Redis database on its free tier if its current limits fit the project's needs, then set both `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN` server-side. Do not commit either value.
+4. Restart the local dev server after changing `.env`.
+5. Check `/api/market-data/daily?symbol=AAPL&adjustment=raw` and `/api/market-data/quote?symbol=AAPL`.
+6. Confirm the response status, provider trading date, and retrieval timestamp before relying on displayed data.
+7. Respect provider rate limits; repeated refreshes can be throttled. Do not interpret a quote snapshot as a live tick stream.
 
 ## Validation
 

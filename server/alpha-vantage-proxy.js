@@ -1,4 +1,5 @@
 import { normalizeAlphaVantageDaily, SUPPORTED_HISTORICAL_SYMBOLS } from '../src/market-data.js';
+import { createUpstashProviderBudgetStore } from './upstash-provider-budget.js';
 
 const DAILY_ROUTE = '/api/market-data/daily';
 const QUOTE_ROUTE = '/api/market-data/quote';
@@ -8,23 +9,29 @@ const PROVIDER_REQUEST_WINDOW_MS = 24 * 60 * 60 * 1000;
 const PROVIDER_RATE_LIMIT_COOLDOWN_MS = 60 * 1000;
 
 
-async function fetchProviderOnce(inFlight, key, fetchImpl, providerUrl, budget) {
+async function fetchProviderOnce(inFlight, key, fetchImpl, providerUrl, budget, providerBudgetStore) {
   if (inFlight.has(key)) return inFlight.get(key);
   const pending = (async () => {
     const currentTime = budget.now();
-    budget.requestTimestamps = budget.requestTimestamps.filter((timestamp) => timestamp > currentTime - budget.windowMs);
-    if (budget.cooldownUntil > currentTime) {
-      return { budgetBlocked: true, retryAfterSeconds: Math.ceil((budget.cooldownUntil - currentTime) / 1000) };
+    if (providerBudgetStore) {
+      const reservation = await providerBudgetStore.reserveRequest({ windowMs: budget.windowMs, requestLimit: budget.requestLimit, requestId: String(currentTime) + ':' + Math.random().toString(36).slice(2) });
+      if (!reservation.allowed) return { budgetBlocked: true, retryAfterSeconds: reservation.retryAfterSeconds };
+    } else {
+      budget.requestTimestamps = budget.requestTimestamps.filter((timestamp) => timestamp > currentTime - budget.windowMs);
+      if (budget.cooldownUntil > currentTime) return { budgetBlocked: true, retryAfterSeconds: Math.ceil((budget.cooldownUntil - currentTime) / 1000) };
+      if (budget.requestTimestamps.length >= budget.requestLimit) {
+        const retryAt = budget.requestTimestamps[0] + budget.windowMs;
+        return { budgetBlocked: true, retryAfterSeconds: Math.max(1, Math.ceil((retryAt - currentTime) / 1000)) };
+      }
+      budget.requestTimestamps.push(currentTime);
     }
-    if (budget.requestTimestamps.length >= budget.requestLimit) {
-      const retryAt = budget.requestTimestamps[0] + budget.windowMs;
-      return { budgetBlocked: true, retryAfterSeconds: Math.max(1, Math.ceil((retryAt - currentTime) / 1000)) };
-    }
-    budget.requestTimestamps.push(currentTime);
     const upstream = await fetchImpl(providerUrl, { signal: AbortSignal.timeout(10_000) });
     if (!upstream.ok) return { upstream, providerPayload: null };
     const providerPayload = await upstream.json();
-    if (providerPayload?.Note) budget.cooldownUntil = Math.max(budget.cooldownUntil, budget.now() + budget.cooldownMs);
+    if (providerPayload?.Note) {
+      if (providerBudgetStore) await providerBudgetStore.activateCooldown(budget.cooldownMs);
+      else budget.cooldownUntil = Math.max(budget.cooldownUntil, budget.now() + budget.cooldownMs);
+    }
     return { upstream, providerPayload };
   })();
   inFlight.set(key, pending);
@@ -73,6 +80,7 @@ export function createAlphaVantageMiddleware({
   providerRequestLimit = Number(process.env.ALPHA_VANTAGE_DAILY_REQUEST_LIMIT) || 25,
   providerWindowMs = PROVIDER_REQUEST_WINDOW_MS,
   providerRateLimitCooldownMs = PROVIDER_RATE_LIMIT_COOLDOWN_MS,
+  providerBudgetStore = createUpstashProviderBudgetStore(),
 } = {}) {
   const cache = new Map();
   const inFlight = new Map();
@@ -111,7 +119,7 @@ export function createAlphaVantageMiddleware({
       try {
         const providerUrl = new URL('https://www.alphavantage.co/query');
         providerUrl.search = new URLSearchParams({ function: 'GLOBAL_QUOTE', symbol, apikey: apiKey }).toString();
-        const { upstream, providerPayload, budgetBlocked, retryAfterSeconds } = await fetchProviderOnce(inFlight, cacheKey, fetchImpl, providerUrl, providerBudget);
+        const { upstream, providerPayload, budgetBlocked, retryAfterSeconds } = await fetchProviderOnce(inFlight, cacheKey, fetchImpl, providerUrl, providerBudget, providerBudgetStore);
         if (budgetBlocked) {
           response.setHeader('Retry-After', String(retryAfterSeconds));
           return sendJson(response, 429, { status: 'rate_limited', message: 'Market-data provider request budget is temporarily exhausted. Please retry after the indicated delay.' });
@@ -156,6 +164,7 @@ export function createAlphaVantageMiddleware({
         cache.set(cacheKey, { payload, expiresAt: now() + quoteCacheTtlMs });
         return sendJson(response, 200, payload);
       } catch (error) {
+        if (error?.name === 'ProviderBudgetStorageError') return sendJson(response, 503, { status: 'unavailable', message: 'Market-data requests are paused because shared quota protection is temporarily unavailable.' });
         const message = error?.name === 'TimeoutError' || error?.name === 'AbortError'
           ? 'The quote provider did not respond before the request timeout.'
           : error instanceof SyntaxError
@@ -177,7 +186,7 @@ export function createAlphaVantageMiddleware({
         outputsize: 'compact',
         apikey: apiKey,
       }).toString();
-      const { upstream, providerPayload, budgetBlocked, retryAfterSeconds } = await fetchProviderOnce(inFlight, `daily:${cacheKey}`, fetchImpl, providerUrl, providerBudget);
+      const { upstream, providerPayload, budgetBlocked, retryAfterSeconds } = await fetchProviderOnce(inFlight, 'daily:' + cacheKey, fetchImpl, providerUrl, providerBudget, providerBudgetStore);
       if (budgetBlocked) {
         response.setHeader('Retry-After', String(retryAfterSeconds));
         return sendJson(response, 429, { status: 'rate_limited', message: 'Market-data provider request budget is temporarily exhausted. Please retry after the indicated delay.' });
@@ -206,6 +215,7 @@ export function createAlphaVantageMiddleware({
       cache.set(cacheKey, { payload, expiresAt: now() + cacheTtlMs });
       return sendJson(response, 200, payload);
     } catch (error) {
+      if (error?.name === 'ProviderBudgetStorageError') return sendJson(response, 503, { status: 'unavailable', message: 'Market-data requests are paused because shared quota protection is temporarily unavailable.' });
       const message = error?.name === 'TimeoutError' || error?.name === 'AbortError'
         ? 'Alpha Vantage did not respond before the request timeout.'
         : error instanceof SyntaxError
