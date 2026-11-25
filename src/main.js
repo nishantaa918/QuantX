@@ -5,6 +5,7 @@ import { SUPPORTED_HISTORICAL_SYMBOLS, toPriceSeries } from './market-data.js';
 import { hydrateIcons } from './icons.js';
 import {
   buildCoverage,
+  analyzeExecutionCostSensitivity,
   calculateStrategyBacktest,
   classifyMarketScenario,
   DEFAULT_EXECUTION_COSTS,
@@ -496,12 +497,16 @@ function renderGuardrailPanel(guardrails, title) {
   return `<section class="panel diagnostics-panel"><div class="panel-heading"><div><p class="section-kicker">SIMULATED RISK</p><h2>${escapeHTML(title)}</h2></div><span class="diagnostic-status status-${guardrails.status.toLowerCase()}">${guardrails.status}</span></div>${renderGuardrailChecks(guardrails)}</section>`;
 }
 
-function renderBacktestResults(backtest) {
+function renderBacktestResults(backtest, series = latestBacktestSeries ?? currentSeries) {
   if (!backtest) return '<p class="empty-state">Run a backtest to calculate strategy performance.</p>';
   if (!backtest.valid || !backtest.metrics) return `<p class="empty-state">${escapeHTML(backtest.errors.join(' ')) || 'Run a valid backtest to calculate strategy performance.'}</p>`;
   if (!backtest.exposures.some((exposure) => exposure > 0)) return '<p class="empty-state">No positions were generated; performance percentages are unavailable for this run.</p>';
   const metrics = backtest.metrics;
-  return `<div class="result-summary"><div><span>NET TOTAL RETURN</span><strong class="${metrics.totalReturn >= 0 ? 'is-positive' : 'is-negative'}">${metrics.totalReturn >= 0 ? '+' : ''}${metrics.totalReturn.toFixed(2)}%</strong></div><div><span>GROSS RETURN</span><strong>${backtest.grossMetrics.totalReturn.toFixed(2)}%</strong></div><div><span>SHARPE RATIO</span><strong>${metrics.sharpeRatio.toFixed(2)}</strong></div><div><span>MAX DRAWDOWN</span><strong>${metrics.maxDrawdown.toFixed(2)}%</strong></div></div><p class="result-caption">Estimated costs: ${backtest.totalTransactionCostsUSD.toFixed(2)} across ${backtest.tradeCount} position changes (${backtest.executionCosts.commissionBps} bps commission + ${backtest.executionCosts.slippageModel === 'volume-impact' ? 'prior-session volume-impact proxy' : `${backtest.executionCosts.slippageBps} bps fixed slippage`} per unit turnover). ${backtest.totalTurnover.toFixed(2)}x cumulative turnover / ${backtest.signals.length} observations. Positions take effect one session after a signal.</p>`;
+  const sensitivity = analyzeExecutionCostSensitivity(series, backtest.config, 100_000, backtest.executionCosts);
+  const sensitivityRows = sensitivity.valid
+    ? sensitivity.scenarios.map((scenario) => `<tr><td>${escapeHTML(scenario.label)}</td><td class="mono-cell">${scenario.netReturnPct >= 0 ? '+' : ''}${scenario.netReturnPct.toFixed(2)}%</td><td class="mono-cell">${scenario.costDragPct.toFixed(2)}%</td><td class="mono-cell">${scenario.totalTransactionCostsUSD.toFixed(2)}</td></tr>`).join('')
+    : '';
+  return `<div class="result-summary"><div><span>NET TOTAL RETURN</span><strong class="${metrics.totalReturn >= 0 ? 'is-positive' : 'is-negative'}">${metrics.totalReturn >= 0 ? '+' : ''}${metrics.totalReturn.toFixed(2)}%</strong></div><div><span>GROSS RETURN</span><strong>${backtest.grossMetrics.totalReturn.toFixed(2)}%</strong></div><div><span>SHARPE RATIO</span><strong>${metrics.sharpeRatio.toFixed(2)}</strong></div><div><span>MAX DRAWDOWN</span><strong>${metrics.maxDrawdown.toFixed(2)}%</strong></div></div><p class="result-caption">Estimated costs: ${backtest.totalTransactionCostsUSD.toFixed(2)} across ${backtest.tradeCount} position changes (${backtest.executionCosts.commissionBps} bps commission + ${backtest.executionCosts.slippageModel === 'volume-impact' ? 'prior-session volume-impact proxy' : `${backtest.executionCosts.slippageBps} bps fixed slippage`} per unit turnover). ${backtest.totalTurnover.toFixed(2)}x cumulative turnover / ${backtest.signals.length} observations. Positions take effect one session after a signal.</p>${sensitivityRows ? `<div><p class="section-kicker">EXECUTION-COST SENSITIVITY</p><div class="table-scroll"><table class="workspace-table"><thead><tr><th>SCENARIO</th><th>NET RETURN</th><th>COST DRAG</th><th>TRANSACTION COSTS</th></tr></thead><tbody>${sensitivityRows}</tbody></table></div><p class="table-note">Zero-cost, configured, and 2× stressed assumptions. This is a sensitivity check, not a forecast.</p></div>` : ''}`;
 }
 
 function experimentMetric(label, value, suffix) {

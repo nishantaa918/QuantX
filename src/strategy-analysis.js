@@ -469,6 +469,49 @@ export function runParameterSweep(
   return combinations;
 }
 
+export function analyzeExecutionCostSensitivity(
+  series,
+  parameters = DEFAULT_STRATEGY,
+  startingCapital = 100_000,
+  executionCosts = DEFAULT_EXECUTION_COSTS,
+) {
+  const validation = validateExecutionCosts(executionCosts);
+  if (!validation.valid) return { valid: false, error: validation.errors.join(' '), scenarios: [] };
+  const configured = validation.config;
+  const stressed = {
+    ...configured,
+    commissionBps: Math.min(100, configured.commissionBps * 2),
+    ...(configured.slippageModel === 'volume-impact'
+      ? { impactCoefficient: Math.min(1, (configured.impactCoefficient ?? 0.1) * 2) }
+      : { slippageBps: Math.min(100, configured.slippageBps * 2) }),
+  };
+  const definitions = [
+    { label: 'Zero costs', executionCosts: { commissionBps: 0, slippageBps: 0 } },
+    { label: 'Configured', executionCosts: configured },
+    { label: 'Stressed (2×)', executionCosts: stressed },
+  ];
+  const analyses = definitions.map((scenario) => ({
+    ...scenario,
+    backtest: calculateStrategyBacktest(series, parameters, startingCapital, scenario.executionCosts),
+  }));
+  const failed = analyses.find((scenario) => !scenario.backtest.valid);
+  if (failed) return { valid: false, error: `${failed.label}: ${failed.backtest.errors.join(' ')}`, scenarios: [] };
+  const grossReturnPct = analyses[1].backtest.grossMetrics.totalReturn;
+  return {
+    valid: true,
+    grossReturnPct,
+    scenarios: analyses.map(({ label, executionCosts: scenarioCosts, backtest }) => ({
+      label,
+      executionCosts: scenarioCosts,
+      netReturnPct: backtest.metrics.totalReturn,
+      costDragPct: grossReturnPct - backtest.metrics.totalReturn,
+      totalTransactionCostsUSD: backtest.totalTransactionCostsUSD,
+      maxDrawdownPct: backtest.metrics.maxDrawdown,
+      sharpeRatio: backtest.metrics.sharpeRatio,
+    })),
+  };
+}
+
 export function classifyMarketScenario(series) {
   if (!finiteSeries(series?.values)) return null;
   const returns = series.values.slice(1).map((value, index) => value / series.values[index] - 1);
