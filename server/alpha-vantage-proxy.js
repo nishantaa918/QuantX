@@ -200,7 +200,7 @@ export function createAlphaVantageMiddleware({
     pruneExpiredCache(cache, now());
 
     if (!apiKey) {
-      return sendJson(response, 503, { status: 'unavailable', message: 'Historical data is unavailable: the server-side Alpha Vantage key is not configured.' });
+      return sendJson(response, 503, { status: 'unavailable', message: isQuote ? 'Quote data is unavailable: the server-side Alpha Vantage key is not configured.' : 'Historical data is unavailable: the server-side Alpha Vantage key is not configured.' });
     }
 
     if (isQuote) {
