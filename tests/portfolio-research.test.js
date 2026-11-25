@@ -255,3 +255,46 @@ test('portfolio volume-impact model rejects missing or invalid aligned OHLCV', (
   assert.match(missing.error, /aligned OHLCV/);
   assert.equal(invalid.valid, false);
 });
+
+test('volume-impact portfolio costs align OHLCV by shared date and use raw prices for adjusted series', () => {
+  const common = ['2025-01-01', '2025-01-04', '2025-01-05'];
+  const make = (symbol, dates, rawValues, volume, basis = 'raw') => ({
+    symbol,
+    series: {
+      period: 'HISTORICAL',
+      priceBasis: basis,
+      labels: dates,
+      values: rawValues.map((value) => basis === 'adjusted' ? value * 0.9 : value),
+      observations: dates.map((date, index) => {
+        const rawClose = rawValues[index];
+        return {
+          date,
+          close: basis === 'adjusted' ? rawClose * 0.9 : rawClose,
+          rawClose,
+          high: rawClose * 1.02,
+          low: rawClose * 0.98,
+          volume: volume[index],
+        };
+      }),
+    },
+  });
+  const datesA = ['2025-01-01', '2025-01-02', '2025-01-04', '2025-01-05'];
+  const datesB = ['2025-01-01', '2025-01-03', '2025-01-04', '2025-01-05'];
+  const rawA = make('AAPL', datesA, [100, 101, 104, 105], [1_000_000, 0, 1_200_000, 1_300_000]);
+  const rawB = make('MSFT', datesB, [200, 203, 208, 210], [2_000_000, 0, 2_200_000, 2_300_000]);
+  const costs = { commissionBps: 1, slippageModel: 'volume-impact', impactCoefficient: 0.1 };
+  const rawResult = analyzeEqualWeightPortfolio([rawA, rawB], { executionCosts: costs });
+  assert.equal(rawResult.valid, true);
+  assert.deepEqual(rawResult.commonDates, common);
+  assert.ok(rawResult.totalTransactionCostsUSD > 0);
+
+  const adjustedA = make('AAPL', datesA, [100, 101, 104, 105], [1_000_000, 0, 1_200_000, 1_300_000], 'adjusted');
+  const adjustedB = make('MSFT', datesB, [200, 203, 208, 210], [2_000_000, 0, 2_200_000, 2_300_000], 'adjusted');
+  const adjustedResult = analyzeEqualWeightPortfolio([adjustedA, adjustedB], { executionCosts: costs });
+  assert.equal(adjustedResult.valid, true);
+  assert.ok(Math.abs(adjustedResult.totalTransactionCostsUSD - rawResult.totalTransactionCostsUSD) < 1e-8);
+
+  adjustedB.series.observations[2].volume = 0;
+  const invalidCommonObservation = analyzeEqualWeightPortfolio([adjustedA, adjustedB], { executionCosts: costs });
+  assert.equal(invalidCommonObservation.valid, false);
+});
