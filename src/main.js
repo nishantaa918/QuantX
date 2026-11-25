@@ -936,7 +936,10 @@ async function loadResearchBenchmark() {
     benchmarkSymbol: symbol,
   };
   const panel = document.querySelector('#research-intelligence');
-  if (panel) panel.innerHTML = '<p class="empty-state">Loading benchmark history and aligning shared trading dates…</p>';
+  const benchmarkSelector = panel?.querySelector('.benchmark-selector');
+  if (benchmarkSelector && !benchmarkSelector.querySelector('[data-benchmark-loading]')) {
+    benchmarkSelector.insertAdjacentHTML('beforeend', '<p class="empty-state" data-benchmark-loading>Loading benchmark history and aligning shared trading dates…</p>');
+  }
   try {
     let benchmarkSeries;
     if (symbol === selected.symbol) {
