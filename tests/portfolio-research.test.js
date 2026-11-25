@@ -183,3 +183,75 @@ test('constant annualized log growth across unequal intervals has zero estimated
   assert.equal(result.metrics.annualizedVolatilityPct, 0);
   assert.equal(result.metrics.sharpeRatio, null);
 });
+
+function historicalAsset(symbol, values, volume = 1_000_000) {
+  const labels = values.map((_, index) => new Date(Date.UTC(2025, 0, index + 1)).toISOString().slice(0, 10));
+  return {
+    symbol,
+    series: {
+      period: 'HISTORICAL',
+      priceBasis: 'raw',
+      labels,
+      values,
+      observations: values.map((close, index) => ({
+        date: labels[index],
+        close,
+        rawClose: close,
+        high: close * 1.02,
+        low: close * 0.98,
+        volume,
+      })),
+    },
+  };
+}
+
+test('portfolio rebalancing costs reduce net returns and reconcile to gross equity', () => {
+  const assets = [
+    historicalAsset('AAPL', [100, 120, 90, 110, 115]),
+    historicalAsset('MSFT', [100, 100, 120, 115, 130]),
+  ];
+  const free = analyzeEqualWeightPortfolio(assets, { executionCosts: { commissionBps: 0, slippageBps: 0 } });
+  const costly = analyzeEqualWeightPortfolio(assets, { executionCosts: { commissionBps: 1, slippageBps: 5 } });
+
+  assert.equal(free.valid, true);
+  assert.equal(costly.valid, true);
+  assert.deepEqual(free.equityCurve, free.grossEquityCurve);
+  assert.ok(costly.totalTurnover > 0);
+  assert.ok(costly.totalTransactionCostsUSD > 0);
+  assert.ok(costly.equityCurve.at(-1) < costly.grossEquityCurve.at(-1));
+  assert.ok(costly.metrics.totalReturnPct < costly.grossMetrics.totalReturnPct);
+  assert.ok(Math.abs(costly.totalTransactionCostsUSD - costly.transactionCostsUSD.reduce((sum, value) => sum + value, 0)) < 1e-8);
+});
+
+test('portfolio volume-impact costs use aligned OHLCV and respond to dollar volume', () => {
+  const lowVolume = analyzeEqualWeightPortfolio([
+    historicalAsset('AAPL', [100, 120, 90, 110, 115], 100_000),
+    historicalAsset('MSFT', [100, 100, 120, 115, 130], 100_000),
+  ], { executionCosts: { commissionBps: 0, slippageModel: 'volume-impact', impactCoefficient: 0.1 } });
+  const highVolume = analyzeEqualWeightPortfolio([
+    historicalAsset('AAPL', [100, 120, 90, 110, 115], 10_000_000),
+    historicalAsset('MSFT', [100, 100, 120, 115, 130], 10_000_000),
+  ], { executionCosts: { commissionBps: 0, slippageModel: 'volume-impact', impactCoefficient: 0.1 } });
+
+  assert.equal(lowVolume.valid, true);
+  assert.equal(highVolume.valid, true);
+  assert.ok(lowVolume.totalTransactionCostsUSD > highVolume.totalTransactionCostsUSD);
+});
+
+test('portfolio volume-impact model rejects missing or invalid aligned OHLCV', () => {
+  const assets = [
+    asset('AAPL', [100, 120, 90, 110, 115]),
+    asset('MSFT', [100, 100, 120, 115, 130]),
+  ];
+  const missing = analyzeEqualWeightPortfolio(assets, { executionCosts: { slippageModel: 'volume-impact' } });
+  const incomplete = [
+    historicalAsset('AAPL', [100, 120, 90, 110, 115]),
+    historicalAsset('MSFT', [100, 100, 120, 115, 130]),
+  ];
+  incomplete[1].series.observations[2].volume = 0;
+  const invalid = analyzeEqualWeightPortfolio(incomplete, { executionCosts: { slippageModel: 'volume-impact' } });
+
+  assert.equal(missing.valid, false);
+  assert.match(missing.error, /aligned OHLCV/);
+  assert.equal(invalid.valid, false);
+});
