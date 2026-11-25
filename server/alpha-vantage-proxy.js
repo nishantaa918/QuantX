@@ -99,7 +99,11 @@ export function createAlphaVantageMiddleware({
         cache.set(cacheKey, { payload, expiresAt: now() + quoteCacheTtlMs });
         return sendJson(response, 200, payload);
       } catch (error) {
-        const message = error?.name === 'TimeoutError' ? 'The quote provider did not respond before the request timeout.' : 'Could not retrieve a quote snapshot.';
+        const message = error?.name === 'TimeoutError' || error?.name === 'AbortError'
+          ? 'The quote provider did not respond before the request timeout.'
+          : error instanceof SyntaxError
+            ? 'The quote provider returned an unreadable response.'
+            : 'Could not retrieve a quote snapshot.';
         return sendJson(response, 502, { status: 'error', message });
       }
     }
@@ -141,7 +145,7 @@ export function createAlphaVantageMiddleware({
       cache.set(cacheKey, { payload, expiresAt: now() + cacheTtlMs });
       return sendJson(response, 200, payload);
     } catch (error) {
-      const message = error?.name === 'TimeoutError'
+      const message = error?.name === 'TimeoutError' || error?.name === 'AbortError'
         ? 'Alpha Vantage did not respond before the request timeout.'
         : error instanceof SyntaxError
           ? 'Alpha Vantage returned an unreadable response.'

@@ -249,3 +249,69 @@ test('quote endpoint accepts valid negative changes and zero volume', async () =
   assert.equal(response.result().body.data.changePercent, -0.5);
   assert.equal(response.result().body.data.volume, 0);
 });
+
+
+test('market-data routes handle network failures without exposing upstream error details', async () => {
+  for (const path of ['/api/market-data/daily?symbol=AAPL', '/api/market-data/quote?symbol=AAPL']) {
+    const handler = createMarketDataApiHandler({
+      apiKey: 'private-network-key',
+      fetchImpl: async () => { throw new Error('socket failure containing private diagnostic'); },
+    });
+    const response = responseRecorder();
+    await handler({ method: 'GET', url: path }, response);
+    const result = response.result();
+    assert.equal(result.status, 502);
+    assert.equal(JSON.stringify(result.body).includes('private diagnostic'), false);
+  }
+});
+
+test('market-data routes classify request timeouts and aborts safely', async () => {
+  for (const name of ['TimeoutError', 'AbortError']) {
+    for (const path of ['/api/market-data/daily?symbol=AAPL', '/api/market-data/quote?symbol=AAPL']) {
+      const handler = createMarketDataApiHandler({
+        apiKey: 'private-timeout-key',
+        fetchImpl: async () => { const error = new Error('internal abort detail'); error.name = name; throw error; },
+      });
+      const response = responseRecorder();
+      await handler({ method: 'GET', url: path }, response);
+      const result = response.result();
+      assert.equal(result.status, 502);
+      assert.match(result.body.message, /timeout/i);
+      assert.equal(result.body.message.includes('internal abort detail'), false);
+    }
+  }
+});
+
+test('market-data routes handle malformed JSON responses with safe messages', async () => {
+  for (const path of ['/api/market-data/daily?symbol=AAPL', '/api/market-data/quote?symbol=AAPL']) {
+    const handler = createMarketDataApiHandler({
+      apiKey: 'private-json-key',
+      fetchImpl: async () => ({ ok: true, json: async () => { throw new SyntaxError('private parser detail'); } }),
+    });
+    const response = responseRecorder();
+    await handler({ method: 'GET', url: path }, response);
+    const result = response.result();
+    assert.equal(result.status, 502);
+    assert.match(result.body.message, /unreadable response/i);
+    assert.equal(result.body.message.includes('private parser detail'), false);
+  }
+});
+
+test('market-data routes reject upstream HTTP failures without caching an error response', async () => {
+  for (const path of ['/api/market-data/daily?symbol=AAPL', '/api/market-data/quote?symbol=AAPL']) {
+    let calls = 0;
+    const handler = createMarketDataApiHandler({
+      apiKey: 'private-http-key',
+      fetchImpl: async () => {
+        calls += 1;
+        return { ok: false, status: 503, json: async () => ({}) };
+      },
+    });
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const response = responseRecorder();
+      await handler({ method: 'GET', url: path }, response);
+      assert.equal(response.result().status, 502);
+    }
+    assert.equal(calls, 2, 'failed upstream responses must not be cached');
+  }
+});
