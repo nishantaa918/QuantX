@@ -96,6 +96,7 @@ export function runWalkForwardValidation(series, {
   const outOfSampleReturns = [];
   const benchmarkReturns = [];
   let strategyCapital = startingCapital;
+  let previousOutOfSampleExposure = 0;
   let skippedFolds = 0;
 
   for (let trainStart = 0; trainStart + trainWindow + testWindow <= series.values.length; trainStart += step) {
@@ -129,6 +130,13 @@ export function runWalkForwardValidation(series, {
     }
 
     const foldReturns = forwardBacktest.dailyReturns.slice(trainEnd, testEnd);
+    const costRatePerUnitTurnover = (forwardBacktest.executionCosts.commissionBps + forwardBacktest.executionCosts.slippageBps) / 10_000;
+    const firstTestExposure = (forwardBacktest.exposures[trainEnd - 1] ?? 0) / 100;
+    const firstTestTurnover = Math.abs(firstTestExposure - previousOutOfSampleExposure);
+    const firstTestCostRate = firstTestTurnover * costRatePerUnitTurnover;
+    // A newly selected fold strategy must rebalance from the position actually
+    // held at the end of the preceding OOS fold, not its own hypothetical history.
+    foldReturns[0] = forwardBacktest.grossDailyReturns[trainEnd] - firstTestCostRate;
     const foldBenchmarkReturns = [];
     for (let index = trainEnd; index < testEnd; index += 1) {
       foldBenchmarkReturns.push(series.values[index] / series.values[index - 1] - 1);
@@ -141,11 +149,13 @@ export function runWalkForwardValidation(series, {
     let foldStrategyCapital = strategyCapital;
     for (let index = trainEnd; index < testEnd; index += 1) {
       const prefixEquity = forwardBacktest.equityCurve[index - 1] ?? startingCapital;
-      const costFraction = prefixEquity > 0
-        ? forwardBacktest.transactionCostsUSD[index] / prefixEquity
-        : 0;
+      const costFraction = index === trainEnd
+        ? firstTestCostRate
+        : prefixEquity > 0
+          ? forwardBacktest.transactionCostsUSD[index] / prefixEquity
+          : 0;
       foldCosts += foldStrategyCapital * costFraction;
-      foldStrategyCapital *= 1 + forwardBacktest.dailyReturns[index];
+      foldStrategyCapital *= 1 + foldReturns[index - trainEnd];
     }
 
     folds.push({
@@ -171,6 +181,7 @@ export function runWalkForwardValidation(series, {
     for (const dailyReturn of foldBenchmarkReturns) {
       benchmarkReturns.push(dailyReturn);
     }
+    previousOutOfSampleExposure = (forwardBacktest.exposures[testEnd - 2] ?? 0) / 100;
   }
 
   if (!folds.length) {
