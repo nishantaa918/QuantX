@@ -146,7 +146,7 @@ export function analyzeEqualWeightPortfolio(assets, { startingCapital = 100_000,
     const preRebalanceEquity = priorEquity * (1 + grossReturn);
     let totalCostRate = 0;
     let intervalTurnover = 0;
-    if (interval > 0) {
+    {
       for (let assetIndex = 0; assetIndex < assets.length; assetIndex += 1) {
         const assetReturn = assetReturns[assetIndex][interval];
         const driftedWeight = targetWeight * (1 + assetReturn) / (1 + grossReturn);
@@ -154,7 +154,7 @@ export function analyzeEqualWeightPortfolio(assets, { startingCapital = 100_000,
         intervalTurnover += turnover;
         const cost = calculateExecutionCostRate(
           alignedSeries[assetIndex],
-          interval + 1,
+          interval + 2,
           turnover,
           preRebalanceEquity,
           costValidation.config,
@@ -177,7 +177,8 @@ export function analyzeEqualWeightPortfolio(assets, { startingCapital = 100_000,
 
   if (!assetReturns.every((returns) => returns.every(Number.isFinite))
     || !portfolioReturns.every(Number.isFinite)
-    || !equityCurve.every(Number.isFinite)) {
+    || !equityCurve.every(Number.isFinite)
+    || !grossEquityCurve.every(Number.isFinite)) {
     return { valid: false, error: 'The selected price range produces non-finite returns or portfolio values; choose a less extreme data range.', assets: [] };
   }
 
