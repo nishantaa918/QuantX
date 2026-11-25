@@ -99,6 +99,9 @@ export function runMonteCarlo(scenarioCount, years, series, seed = 1, options = 
     return { valid: false, error: `Monte Carlo needs at least ${MONTE_CARLO_MIN_RETURNS + 1} valid price observations (60 returns). Select a longer series or load historical data.` };
   }
   const returns = values.slice(1).map((value, index) => value / values[index] - 1);
+  if (!returns.every((value) => Number.isFinite(value) && value > -1)) {
+    return { valid: false, error: 'Monte Carlo requires finite simple returns greater than -100%; inspect the source price history for numerical underflow or overflow.' };
+  }
   const mean = returns.reduce((sum, value) => sum + value, 0) / returns.length;
   const variance = returns.reduce((sum, value) => sum + (value - mean) ** 2, 0) / (returns.length - 1);
   const dailyVolatility = Math.sqrt(variance);

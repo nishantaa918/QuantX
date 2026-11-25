@@ -83,3 +83,14 @@ test('Monte Carlo validates explicit block lengths and caps them to the observed
   assert.equal(explicit.blockLength, 7);
 });
 
+test('Monte Carlo rejects numerically invalid returns before resampling', () => {
+  const underflowHistory = { values: [Number.MAX_VALUE, ...Array(60).fill(Number.MIN_VALUE)] };
+  const overflowHistory = { values: [Number.MIN_VALUE, Number.MAX_VALUE, ...Array(59).fill(Number.MAX_VALUE)] };
+
+  for (const invalidHistory of [underflowHistory, overflowHistory]) {
+    const result = runMonteCarlo(100, 1, invalidHistory, 3, { blockLength: 60 });
+    assert.equal(result.valid, false);
+    assert.match(result.error, /finite simple returns greater than -100%/);
+  }
+});
+
