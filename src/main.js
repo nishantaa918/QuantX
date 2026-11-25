@@ -935,10 +935,9 @@ async function loadResearchBenchmark() {
     blockLength: Number(document.querySelector('#hypothesis-block-length')?.value ?? 5),
     benchmarkSymbol: symbol,
   };
-  const panel = document.querySelector('#research-intelligence');
-  const benchmarkSelector = panel?.querySelector('.benchmark-selector');
-  if (benchmarkSelector && !benchmarkSelector.querySelector('[data-benchmark-loading]')) {
-    benchmarkSelector.insertAdjacentHTML('beforeend', '<p class="empty-state" data-benchmark-loading>Loading benchmark history and aligning shared trading dates…</p>');
+  const benchmarkSelector = document.querySelector('#research-intelligence .benchmark-selector');
+  if (benchmarkSelector && !benchmarkSelector.innerHTML.includes('data-benchmark-loading')) {
+    benchmarkSelector.innerHTML += '<p class="empty-state" data-benchmark-loading>Loading benchmark history and aligning shared trading dates…</p>';
   }
   try {
     let benchmarkSeries;
