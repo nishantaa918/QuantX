@@ -268,3 +268,36 @@ test('Upstash adapter refuses insecure or ambiguous endpoints before sending cre
     assert.equal(calls, 0, 'invalid endpoints must be rejected before any request is sent');
   }
 });
+
+test('Upstash cooldown accepts only a positive integer Redis result', async () => {
+  let command;
+  const store = createUpstashProviderBudgetStore({
+    url: 'https://example.upstash.io',
+    token: 'server-secret',
+    fetchImpl: async (_url, options) => {
+      command = JSON.parse(options.body);
+      return { ok: true, json: async () => ({ result: 5000 }) };
+    },
+  });
+
+  await store.activateCooldown(5000);
+  assert.equal(command[0], 'EVAL');
+  assert.equal(command[2], '1');
+  assert.equal(command[4], '5000');
+});
+
+test('Upstash cooldown rejects null, strings, booleans, objects, and invalid numeric results', async () => {
+  const malformedResults = [null, '', '5000', 'not-a-number', false, [], {}, 0, -1, 1.5, Number.MAX_SAFE_INTEGER + 1];
+  for (const result of malformedResults) {
+    const store = createUpstashProviderBudgetStore({
+      url: 'https://example.upstash.io',
+      token: 'server-secret',
+      fetchImpl: async () => ({ ok: true, json: async () => ({ result }) }),
+    });
+    await assert.rejects(
+      store.activateCooldown(5000),
+      { name: 'ProviderBudgetStorageError' },
+      `malformed cooldown result should fail closed: ${JSON.stringify(result)}`,
+    );
+  }
+});
