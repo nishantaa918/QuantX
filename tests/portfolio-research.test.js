@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { analyzeEqualWeightPortfolio } from '../src/portfolio-research.js';
+import { analyzeEqualWeightPortfolio, analyzePortfolioCostSensitivity } from '../src/portfolio-research.js';
 
 function asset(symbol, values, labels = null, priceBasis = 'adjusted') {
   const dates = labels ?? Array.from({ length: values.length }, (_, index) => `2025-01-0${index + 1}`);
@@ -297,4 +297,37 @@ test('volume-impact portfolio costs align OHLCV by shared date and use raw price
   adjustedB.series.observations[2].volume = 0;
   const invalidCommonObservation = analyzeEqualWeightPortfolio([adjustedA, adjustedB], { executionCosts: costs });
   assert.equal(invalidCommonObservation.valid, false);
+});
+
+test('portfolio cost sensitivity compares zero, configured, and stressed assumptions', () => {
+  const assets = [
+    historicalAsset('AAPL', [100, 120, 90, 110, 115]),
+    historicalAsset('MSFT', [100, 100, 120, 115, 130]),
+  ];
+  const executionCosts = { commissionBps: 1, slippageBps: 5 };
+  const sensitivity = analyzePortfolioCostSensitivity(assets, { executionCosts });
+
+  assert.equal(sensitivity.valid, true);
+  assert.deepEqual(sensitivity.scenarios.map((scenario) => scenario.label), ['Zero costs', 'Configured', 'Stressed (2×)']);
+  assert.ok(Math.abs(sensitivity.scenarios[0].netReturnPct - sensitivity.grossReturnPct) < 1e-10);
+  assert.ok(sensitivity.scenarios[1].totalTransactionCostsUSD > 0);
+  assert.ok(sensitivity.scenarios[2].totalTransactionCostsUSD > sensitivity.scenarios[1].totalTransactionCostsUSD);
+  assert.ok(sensitivity.scenarios[0].netReturnPct > sensitivity.scenarios[1].netReturnPct);
+  assert.ok(sensitivity.scenarios[1].netReturnPct > sensitivity.scenarios[2].netReturnPct);
+  assert.ok(sensitivity.scenarios[2].costDragPct > sensitivity.scenarios[1].costDragPct);
+});
+
+test('volume-impact sensitivity stresses the coefficient without changing historical inputs', () => {
+  const assets = [
+    historicalAsset('AAPL', [100, 120, 90, 110, 115]),
+    historicalAsset('MSFT', [100, 100, 120, 115, 130]),
+  ];
+  const snapshot = JSON.stringify(assets);
+  const sensitivity = analyzePortfolioCostSensitivity(assets, {
+    executionCosts: { commissionBps: 1, slippageModel: 'volume-impact', impactCoefficient: 0.1 },
+  });
+  assert.equal(sensitivity.valid, true);
+  assert.equal(sensitivity.scenarios[2].executionCosts.impactCoefficient, 0.2);
+  assert.ok(sensitivity.scenarios[2].totalTransactionCostsUSD > sensitivity.scenarios[1].totalTransactionCostsUSD);
+  assert.equal(JSON.stringify(assets), snapshot);
 });
