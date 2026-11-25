@@ -284,7 +284,7 @@ function updateDashboard(series) {
   const stats = hasPolicyTrades ? currentBacktest.metrics : null;
   document.querySelector('#asset-price').textContent = series.values.at(-1).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   setSignedValue('#daily-return', marketStats.dailyReturn, 2);
-  document.querySelector('#annual-volatility').textContent = `${marketStats.annualizedVolatility.toFixed(1)}%`;
+  document.querySelector('#annual-volatility').textContent = Number.isFinite(marketStats.annualizedVolatility) ? `${marketStats.annualizedVolatility.toFixed(1)}%` : '\u2014';
   setSignedValue('#total-return', stats?.totalReturn, 2);
   document.querySelector('#sharpe-ratio').textContent = stats ? stats.sharpeRatio.toFixed(2) : '\u2014';
   document.querySelector('#max-drawdown').textContent = stats ? `${stats.maxDrawdown.toFixed(2)}%` : '\u2014';
