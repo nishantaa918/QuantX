@@ -52,6 +52,33 @@ test('Alpha Vantage normalization sorts dates, removes duplicates, and preserves
   assert.equal(payload.timeZone, 'US/Eastern');
 });
 
+test('daily normalizer requires matching provider symbol metadata', () => {
+  const missingMetadata = dailyPayload();
+  delete missingMetadata['Meta Data']['2. Symbol'];
+  assert.throws(
+    () => normalizeAlphaVantageDaily(missingMetadata, { symbol: 'AAPL' }),
+    /missing or unexpected symbol metadata/i,
+  );
+
+  const blankMetadata = dailyPayload();
+  blankMetadata['Meta Data']['2. Symbol'] = '   ';
+  assert.throws(
+    () => normalizeAlphaVantageDaily(blankMetadata, { symbol: 'AAPL' }),
+    /missing or unexpected symbol metadata/i,
+  );
+
+  const wrongSymbol = dailyPayload();
+  wrongSymbol['Meta Data']['2. Symbol'] = 'MSFT';
+  assert.throws(
+    () => normalizeAlphaVantageDaily(wrongSymbol, { symbol: 'AAPL' }),
+    /missing or unexpected symbol metadata/i,
+  );
+
+  const matchingSymbol = dailyPayload();
+  matchingSymbol['Meta Data']['2. Symbol'] = ' aapl ';
+  assert.equal(normalizeAlphaVantageDaily(matchingSymbol, { symbol: 'AAPL' }).symbol, 'AAPL');
+});
+
 test('normalizer rejects invalid dates, prices, OHLC relationships, volume and empty series', () => {
   assert.throws(() => normalizeAlphaVantageRows([{ ...rows[0], date: '2025-02-30' }]), /date/);
   assert.throws(() => normalizeAlphaVantageRows([{ ...rows[0], open: '0' }]), /open/);
