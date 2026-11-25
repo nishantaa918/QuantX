@@ -31,3 +31,5 @@ jobs:
         run: npm test
       - name: Build production bundle
         run: npm run build
+      - name: Run production preview smoke tests
+        run: npm run test:smoke
