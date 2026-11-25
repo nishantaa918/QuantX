@@ -839,3 +839,64 @@ test('quote refresh bypasses a fresh cache entry and replaces it for subsequent 
   assert.equal(afterRefresh.body.data.price, 202);
   assert.equal(calls, 2, 'the refreshed snapshot should replace the previous cache entry');
 });
+
+test('market-data routes classify provider plan notices without exposing provider text', async () => {
+  for (const [path, expectedMessage] of [
+    ['/api/market-data/daily?symbol=AAPL', /endpoint is unavailable/i],
+    ['/api/market-data/quote?symbol=AAPL', /endpoint is unavailable/i],
+  ]) {
+    const handler = createMarketDataApiHandler({
+      apiKey: 'private-plan-key',
+      fetchImpl: async () => ({
+        ok: true,
+        json: async () => ({ Information: 'PRIVATE PLAN NOTICE: upgrade at https://provider.invalid/private' }),
+      }),
+    });
+    const response = responseRecorder();
+    await handler({ method: 'GET', url: path }, response);
+    const result = response.result();
+    assert.equal(result.status, 503);
+    assert.equal(result.body.status, 'unavailable');
+    assert.match(result.body.message, expectedMessage);
+    assert.equal(JSON.stringify(result.body).includes('PRIVATE PLAN NOTICE'), false);
+    assert.equal(JSON.stringify(result.body).includes('provider.invalid'), false);
+  }
+});
+
+test('market-data routes sanitize provider symbol and request rejection messages', async () => {
+  for (const [path, expectedStatus] of [
+    ['/api/market-data/daily?symbol=AAPL', 502],
+    ['/api/market-data/quote?symbol=AAPL', 502],
+  ]) {
+    const handler = createMarketDataApiHandler({
+      apiKey: 'private-provider-error-key',
+      fetchImpl: async () => ({
+        ok: true,
+        json: async () => ({ 'Error Message': 'PRIVATE PROVIDER DETAIL: account identifier 12345' }),
+      }),
+    });
+    const response = responseRecorder();
+    await handler({ method: 'GET', url: path }, response);
+    const result = response.result();
+    assert.equal(result.status, expectedStatus);
+    assert.equal(result.body.status, 'error');
+    assert.equal(JSON.stringify(result.body).includes('PRIVATE PROVIDER DETAIL'), false);
+    assert.equal(JSON.stringify(result.body).includes('12345'), false);
+  }
+});
+
+test('quote endpoint rejects a provider snapshot for a different symbol', async () => {
+  const handler = createMarketDataApiHandler({
+    apiKey: 'quote-symbol-integrity-key',
+    fetchImpl: async () => ({
+      ok: true,
+      json: async () => validQuote('MSFT', 250),
+    }),
+  });
+  const response = responseRecorder();
+  await handler({ method: 'GET', url: '/api/market-data/quote?symbol=AAPL' }, response);
+  const result = response.result();
+  assert.equal(result.status, 502);
+  assert.equal(result.body.status, 'unavailable');
+  assert.match(result.body.message, /no complete quote snapshot/i);
+});
