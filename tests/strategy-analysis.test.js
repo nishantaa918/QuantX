@@ -256,3 +256,40 @@ test('policy state uses the supplied execution-cost assumptions consistently', (
   assert.ok(costly.latestBacktest.metrics.totalReturn < free.latestBacktest.metrics.totalReturn);
   assert.deepEqual(costly.latestBacktest.executionCosts, { commissionBps: 1, slippageBps: 5 });
 });
+
+test('parameter sweeps and shared policy state preserve volume-impact execution assumptions', () => {
+  const values = Array.from({ length: 100 }, (_, index) => 100 + Math.sin(index * 0.83) * 8 + Math.sin(index * 0.19) * 3);
+  const series = {
+    period: 'HISTORICAL',
+    labels: values.map((_, index) => `2025-Session-${index + 1}`),
+    values,
+    observations: values.map((close, index) => ({
+      date: `2025-Session-${index + 1}`,
+      close,
+      rawClose: close,
+      high: close * 1.02,
+      low: close * 0.98,
+      volume: 250_000 + (index % 7) * 100_000,
+    })),
+  };
+  const executionCosts = { commissionBps: 2, slippageModel: 'volume-impact', impactCoefficient: 0.15 };
+  const snapshot = JSON.stringify(series);
+  const sweep = runParameterSweep(series, activeStrategy, [2], [6], executionCosts);
+  const direct = calculateStrategyBacktest(series, { ...activeStrategy, shortWindow: 2, longWindow: 6 }, 100_000, executionCosts);
+  const state = evaluatePolicyState({
+    series,
+    parameters: activeStrategy,
+    backtestSeries: series,
+    executionCosts,
+  });
+
+  assert.equal(direct.valid, true);
+  assert.equal(sweep.length, 1);
+  assert.deepEqual(sweep[0].executionCosts, executionCosts);
+  assert.deepEqual(sweep[0].metrics, calculatePerformance(direct.equityCurve.slice(5)));
+  assert.ok(direct.totalTransactionCostsUSD > 0);
+  assert.deepEqual(state.currentBacktest.executionCosts, executionCosts);
+  assert.deepEqual(state.latestBacktest.executionCosts, executionCosts);
+  assert.ok(state.latestBacktest.totalTransactionCostsUSD > 0);
+  assert.equal(JSON.stringify(series), snapshot);
+});
