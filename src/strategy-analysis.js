@@ -130,7 +130,7 @@ export function validateExecutionCosts(costs = DEFAULT_EXECUTION_COSTS) {
   if (slippageModel === 'volume-impact' && (!Number.isFinite(config.impactCoefficient ?? 0.1) || (config.impactCoefficient ?? 0.1) <= 0 || (config.impactCoefficient ?? 0.1) > 1)) {
     errors.push('The volume-impact coefficient must be greater than 0 and no more than 1.');
   }
-  return { valid: errors.length === 0, errors, config: { ...config, slippageModel } };
+  return { valid: errors.length === 0, errors, config };
 }
 
 function estimateVolumeImpactBps(series, executionIndex, tradedNotional, coefficient) {
