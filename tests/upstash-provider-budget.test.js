@@ -149,3 +149,25 @@ test('provider cooldown is shared across separate API handler instances', async 
   assert.equal(secondResponse.result().headers['Retry-After'], '5');
   assert.equal(providerCalls, 1);
 });
+
+test('Upstash adapter uses an atomic fixed-window command for hashed client identifiers', async () => {
+  let command;
+  const store = createUpstashProviderBudgetStore({
+    url: 'https://example.upstash.io',
+    token: 'server-secret',
+    fetchImpl: async (_url, options) => {
+      command = JSON.parse(options.body);
+      return { ok: true, json: async () => ({ result: [0, 1500] }) };
+    },
+  });
+  const result = await store.reserveClientRequest({
+    clientKey: 'sha256-digest',
+    windowMs: 60000,
+    requestLimit: 60,
+  });
+  assert.equal(command[0], 'EVAL');
+  assert.equal(command[2], '1');
+  assert.equal(command[3], 'quantx:client-rate-limit:v1:sha256-digest');
+  assert.equal(result.allowed, false);
+  assert.equal(result.retryAfterSeconds, 2);
+});

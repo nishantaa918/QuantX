@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+import { isIP } from 'node:net';
 import { normalizeAlphaVantageDaily, SUPPORTED_HISTORICAL_SYMBOLS } from '../src/market-data.js';
 import { createUpstashProviderBudgetStore } from './upstash-provider-budget.js';
 
@@ -7,6 +9,8 @@ const QUOTE_CACHE_TTL_MS = 60 * 1000;
 const CACHE_TTL_MS = 15 * 60 * 1000;
 const PROVIDER_REQUEST_WINDOW_MS = 24 * 60 * 60 * 1000;
 const PROVIDER_RATE_LIMIT_COOLDOWN_MS = 60 * 1000;
+const CLIENT_RATE_LIMIT_WINDOW_MS = 60 * 1000;
+const CLIENT_RATE_LIMIT_DEFAULT = 60;
 
 
 async function fetchProviderOnce(inFlight, key, fetchImpl, providerUrl, budget, providerBudgetStore) {
@@ -63,6 +67,16 @@ function parseQuoteNumber(value) {
   return Number(normalized);
 }
 
+function getClientIp(request) {
+  const headers = request.headers;
+  const value = typeof headers?.get === 'function'
+    ? headers.get('x-forwarded-for')
+    : headers?.['x-forwarded-for'] ?? headers?.['X-Forwarded-For'];
+  if (typeof value !== 'string' || !value.trim()) return null;
+  const candidate = value.split(',')[0].trim();
+  return isIP(candidate) ? candidate : '';
+}
+
 function sendJson(response, status, payload) {
   response.statusCode = status;
   response.setHeader('Content-Type', 'application/json; charset=utf-8');
@@ -81,9 +95,14 @@ export function createAlphaVantageMiddleware({
   providerWindowMs = PROVIDER_REQUEST_WINDOW_MS,
   providerRateLimitCooldownMs = PROVIDER_RATE_LIMIT_COOLDOWN_MS,
   providerBudgetStore = createUpstashProviderBudgetStore(),
+  clientRequestLimit = Number(process.env.QUANTX_CLIENT_REQUEST_LIMIT) || CLIENT_RATE_LIMIT_DEFAULT,
+  clientRateLimitWindowMs = CLIENT_RATE_LIMIT_WINDOW_MS,
 } = {}) {
   const cache = new Map();
   const inFlight = new Map();
+  const clientRequests = new Map();
+  const effectiveClientRequestLimit = Number.isInteger(clientRequestLimit) && clientRequestLimit > 0 ? clientRequestLimit : CLIENT_RATE_LIMIT_DEFAULT;
+  const effectiveClientWindowMs = Number.isFinite(clientRateLimitWindowMs) && clientRateLimitWindowMs > 0 ? clientRateLimitWindowMs : CLIENT_RATE_LIMIT_WINDOW_MS;
   const providerBudget = {
     now,
     requestLimit: Number.isInteger(providerRequestLimit) && providerRequestLimit > 0 ? providerRequestLimit : 25,
@@ -105,6 +124,38 @@ export function createAlphaVantageMiddleware({
     }
     if (isDaily && !['raw', 'adjusted'].includes(adjustment)) {
       return sendJson(response, 400, { status: 'error', message: 'Adjustment must be raw or adjusted.' });
+    }
+    const clientIp = getClientIp(request);
+    if (clientIp === '') return sendJson(response, 400, { status: 'error', message: 'The client address could not be validated.' });
+    if (clientIp) {
+      const clientKey = createHash('sha256').update(clientIp).digest('hex');
+      let reservation;
+      try {
+        if (providerBudgetStore) {
+          reservation = await providerBudgetStore.reserveClientRequest({ clientKey, windowMs: effectiveClientWindowMs, requestLimit: effectiveClientRequestLimit });
+        } else {
+          const currentTime = now();
+          for (const [key, entry] of clientRequests) if (entry.resetAt <= currentTime) clientRequests.delete(key);
+          let entry = clientRequests.get(clientKey);
+          if (!entry || entry.resetAt <= currentTime) {
+            entry = { count: 0, resetAt: currentTime + effectiveClientWindowMs };
+            clientRequests.set(clientKey, entry);
+          }
+          if (entry.count >= effectiveClientRequestLimit) {
+            reservation = { allowed: false, retryAfterSeconds: Math.max(1, Math.ceil((entry.resetAt - currentTime) / 1000)) };
+          } else {
+            entry.count += 1;
+            reservation = { allowed: true, retryAfterSeconds: 0 };
+          }
+          if (clientRequests.size > 5000) clientRequests.delete(clientRequests.keys().next().value);
+        }
+      } catch {
+        return sendJson(response, 503, { status: 'unavailable', message: 'Request protection is temporarily unavailable. Please retry shortly.' });
+      }
+      if (!reservation.allowed) {
+        response.setHeader('Retry-After', String(reservation.retryAfterSeconds));
+        return sendJson(response, 429, { status: 'rate_limited', message: 'Too many market-data requests. Please wait before trying again.' });
+      }
     }
     pruneExpiredCache(cache, now());
 

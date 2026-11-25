@@ -24,6 +24,8 @@ If the key is absent, both provider endpoints return a clear `503 unavailable` r
 
 ### Provider request budgeting
 
+The API also applies a default per-client ceiling of 60 market-data requests per minute, including cache hits. On Vercel it derives the client address from Vercel's overwritten `x-forwarded-for` request header, hashes the address before using it as a storage key, and never returns or logs the raw address. Configure `QUANTX_CLIENT_REQUEST_LIMIT` server-side to change the ceiling. When shared storage is configured, the limit is shared across serverless instances; without it, the in-memory fallback is best-effort per warm instance. Requests without a forwarded client address (such as local development) skip this per-client layer.
+
 The proxy applies a conservative default of 25 upstream requests per rolling 24-hour window. When both Upstash variables are configured, a short atomic Redis Lua operation reserves requests and stores the provider cooldown across separate Vercel serverless instances. A successful cache hit and a coalesced in-flight request do not spend another provider request. When Alpha Vantage returns its rate-limit `Note`, the proxy stores a shared cooldown and returns HTTP 429 with a `Retry-After` header. The pause is a short backoff, not a claim that the provider's daily quota resets after 60 seconds. If shared storage is configured but unavailable, provider requests fail closed with HTTP 503 rather than silently falling back to per-instance counters.
 
 If Alpha Vantage has explicitly confirmed a different allowance for this educational/open-source project, set the server-side `ALPHA_VANTAGE_DAILY_REQUEST_LIMIT` variable accordingly. Do not increase it based only on assumptions.
