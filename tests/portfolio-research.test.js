@@ -281,7 +281,7 @@ test('volume-impact portfolio costs align OHLCV by shared date and use raw price
   const datesA = ['2025-01-01', '2025-01-02', '2025-01-04', '2025-01-05'];
   const datesB = ['2025-01-01', '2025-01-03', '2025-01-04', '2025-01-05'];
   const rawA = make('AAPL', datesA, [100, 101, 104, 105], [1_000_000, 0, 1_200_000, 1_300_000]);
-  const rawB = make('MSFT', datesB, [200, 203, 208, 210], [2_000_000, 0, 2_200_000, 2_300_000]);
+  const rawB = make('MSFT', datesB, [200, 203, 220, 210], [2_000_000, 0, 2_200_000, 2_300_000]);
   const costs = { commissionBps: 1, slippageModel: 'volume-impact', impactCoefficient: 0.1 };
   const rawResult = analyzeEqualWeightPortfolio([rawA, rawB], { executionCosts: costs });
   assert.equal(rawResult.valid, true);
@@ -289,7 +289,7 @@ test('volume-impact portfolio costs align OHLCV by shared date and use raw price
   assert.ok(rawResult.totalTransactionCostsUSD > 0);
 
   const adjustedA = make('AAPL', datesA, [100, 101, 104, 105], [1_000_000, 0, 1_200_000, 1_300_000], 'adjusted');
-  const adjustedB = make('MSFT', datesB, [200, 203, 208, 210], [2_000_000, 0, 2_200_000, 2_300_000], 'adjusted');
+  const adjustedB = make('MSFT', datesB, [200, 203, 220, 210], [2_000_000, 0, 2_200_000, 2_300_000], 'adjusted');
   const adjustedResult = analyzeEqualWeightPortfolio([adjustedA, adjustedB], { executionCosts: costs });
   assert.equal(adjustedResult.valid, true);
   assert.ok(Math.abs(adjustedResult.totalTransactionCostsUSD - rawResult.totalTransactionCostsUSD) < 1e-8);
