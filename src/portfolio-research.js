@@ -144,6 +144,9 @@ export function analyzeEqualWeightPortfolio(assets, { startingCapital = 100_000,
     const priorEquity = equityCurve.at(-1);
     const grossReturn = grossPortfolioReturns[interval];
     const preRebalanceEquity = priorEquity * (1 + grossReturn);
+    if (!Number.isFinite(preRebalanceEquity) || preRebalanceEquity <= 0) {
+      return { valid: false, error: 'The selected price range produces non-finite or non-positive portfolio equity.', assets: [] };
+    }
     let totalCostRate = 0;
     let intervalTurnover = 0;
     {
