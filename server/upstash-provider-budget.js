@@ -166,7 +166,7 @@ export function createUpstashProviderBudgetStore({
         cooldownKey,
         String(Math.max(1, Math.ceil(cooldownMs))),
       ]);
-      if (!Number.isFinite(Number(result))) throw new ProviderBudgetStorageError();
+      if (typeof result !== 'number' || !Number.isSafeInteger(result) || result < 1) throw new ProviderBudgetStorageError();
     },
   };
 }
