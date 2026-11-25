@@ -8,7 +8,7 @@ test('performance metrics calculate from a complete valid price sequence', () =>
   assert.ok(Math.abs(result.totalReturn - 8.9) < 1e-10);
   assert.ok(Math.abs(result.dailyReturn - 10) < 1e-10);
   assert.ok(Number.isFinite(result.annualizedVolatility));
-  assert.equal(result.maxDrawdown, -10);
+  assert.ok(Math.abs(result.maxDrawdown + 10) < 1e-10);
   assert.equal(result.winRate, 2 / 3 * 100);
 });
 
