@@ -31,24 +31,36 @@ export function generateSeries(period = '1M', seed = 126) {
 }
 
 export function calculatePerformance(values) {
-  const safeValues = Array.isArray(values) ? values.filter((value) => Number.isFinite(value) && value > 0) : [];
-  const returns = safeValues.slice(1).map((value, index) => value / safeValues[index] - 1);
-  const mean = returns.reduce((total, value) => total + value, 0) / Math.max(returns.length, 1);
+  if (!Array.isArray(values) || values.length < 2 || !values.every((value) => Number.isFinite(value) && value > 0)) {
+    return {
+      valid: false,
+      error: 'Performance metrics require at least two consecutive, finite, positive price observations.',
+      totalReturn: null,
+      dailyReturn: null,
+      annualizedVolatility: null,
+      sharpeRatio: null,
+      maxDrawdown: null,
+      winRate: null,
+    };
+  }
+  const returns = values.slice(1).map((value, index) => value / values[index] - 1);
+  const mean = returns.reduce((total, value) => total + value, 0) / returns.length;
   const variance = returns.reduce((total, value) => total + (value - mean) ** 2, 0) / Math.max(returns.length - 1, 1);
   const standardDeviation = Math.sqrt(variance);
-  let peak = safeValues[0] ?? 0;
+  let peak = values[0];
   let maxDrawdown = 0;
-  safeValues.forEach((value) => {
+  values.forEach((value) => {
     peak = Math.max(peak, value);
-    if (peak > 0) maxDrawdown = Math.min(maxDrawdown, (value / peak - 1) * 100);
+    maxDrawdown = Math.min(maxDrawdown, (value / peak - 1) * 100);
   });
   return {
-    totalReturn: safeValues.length > 1 ? (safeValues.at(-1) / safeValues[0] - 1) * 100 : 0,
-    dailyReturn: returns.at(-1) ? returns.at(-1) * 100 : 0,
+    valid: true,
+    totalReturn: (values.at(-1) / values[0] - 1) * 100,
+    dailyReturn: returns.at(-1) * 100,
     annualizedVolatility: standardDeviation * Math.sqrt(252) * 100,
     sharpeRatio: standardDeviation ? mean / standardDeviation * Math.sqrt(252) : 0,
     maxDrawdown,
-    winRate: returns.length ? returns.filter((value) => value > 0).length / returns.length * 100 : 0,
+    winRate: returns.filter((value) => value > 0).length / returns.length * 100,
   };
 }
 
