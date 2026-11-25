@@ -130,7 +130,7 @@ export function runWalkForwardValidation(series, {
     }
 
     const foldReturns = forwardBacktest.dailyReturns.slice(trainEnd, testEnd);
-    const costRatePerUnitTurnover = (executionCosts.commissionBps + executionCosts.slippageBps) / 10_000;
+    const costRatePerUnitTurnover = (forwardBacktest.executionCosts.commissionBps + forwardBacktest.executionCosts.slippageBps) / 10_000;
     const firstTestExposure = (forwardBacktest.exposures[trainEnd - 1] ?? 0) / 100;
     const firstTestTurnover = Math.abs(firstTestExposure - previousOutOfSampleExposure);
     const firstTestCostRate = firstTestTurnover * costRatePerUnitTurnover;
