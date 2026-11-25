@@ -91,6 +91,9 @@ export function runMonteCarlo(scenarioCount, years, series, seed = 1, options = 
   if (!Number.isInteger(scenarioCount) || scenarioCount < 100 || scenarioCount > 10_000 || !Number.isInteger(years) || years < 1 || years > 5) {
     return { valid: false, error: 'Use 100-10,000 scenarios and a whole-year horizon from 1 to 5.' };
   }
+  if (!Number.isInteger(seed) || seed < 0 || seed > 0xffffffff) {
+    return { valid: false, error: 'Seed must be an unsigned 32-bit integer (0 to 4294967295).' };
+  }
   if (options.blockLength !== undefined && (!Number.isInteger(options.blockLength) || options.blockLength <= 0)) {
     return { valid: false, error: 'Block length must be a positive integer.' };
   }
