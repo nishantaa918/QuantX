@@ -10,6 +10,7 @@ export default defineConfig({
       server.middlewares.use(createAlphaVantageMiddleware());
     },
     configurePreviewServer(server) {
+      server.middlewares.use(createHealthMiddleware());
       server.middlewares.use(createAlphaVantageMiddleware());
     },
   }],
