@@ -4,14 +4,28 @@ const DAILY_ROUTE = '/api/market-data/daily';
 const QUOTE_ROUTE = '/api/market-data/quote';
 const QUOTE_CACHE_TTL_MS = 60 * 1000;
 const CACHE_TTL_MS = 15 * 60 * 1000;
+const PROVIDER_REQUEST_WINDOW_MS = 24 * 60 * 60 * 1000;
+const PROVIDER_RATE_LIMIT_COOLDOWN_MS = 60 * 1000;
 
 
-async function fetchProviderOnce(inFlight, key, fetchImpl, providerUrl) {
+async function fetchProviderOnce(inFlight, key, fetchImpl, providerUrl, budget) {
   if (inFlight.has(key)) return inFlight.get(key);
   const pending = (async () => {
+    const currentTime = budget.now();
+    budget.requestTimestamps = budget.requestTimestamps.filter((timestamp) => timestamp > currentTime - budget.windowMs);
+    if (budget.cooldownUntil > currentTime) {
+      return { budgetBlocked: true, retryAfterSeconds: Math.ceil((budget.cooldownUntil - currentTime) / 1000) };
+    }
+    if (budget.requestTimestamps.length >= budget.requestLimit) {
+      const retryAt = budget.requestTimestamps[0] + budget.windowMs;
+      return { budgetBlocked: true, retryAfterSeconds: Math.max(1, Math.ceil((retryAt - currentTime) / 1000)) };
+    }
+    budget.requestTimestamps.push(currentTime);
     const upstream = await fetchImpl(providerUrl, { signal: AbortSignal.timeout(10_000) });
     if (!upstream.ok) return { upstream, providerPayload: null };
-    return { upstream, providerPayload: await upstream.json() };
+    const providerPayload = await upstream.json();
+    if (providerPayload?.Note) budget.cooldownUntil = Math.max(budget.cooldownUntil, budget.now() + budget.cooldownMs);
+    return { upstream, providerPayload };
   })();
   inFlight.set(key, pending);
   try {
@@ -56,9 +70,20 @@ export function createAlphaVantageMiddleware({
   now = () => Date.now(),
   cacheTtlMs = CACHE_TTL_MS,
   quoteCacheTtlMs = QUOTE_CACHE_TTL_MS,
+  providerRequestLimit = Number(process.env.ALPHA_VANTAGE_DAILY_REQUEST_LIMIT) || 25,
+  providerWindowMs = PROVIDER_REQUEST_WINDOW_MS,
+  providerRateLimitCooldownMs = PROVIDER_RATE_LIMIT_COOLDOWN_MS,
 } = {}) {
   const cache = new Map();
   const inFlight = new Map();
+  const providerBudget = {
+    now,
+    requestLimit: Number.isInteger(providerRequestLimit) && providerRequestLimit > 0 ? providerRequestLimit : 25,
+    windowMs: Number.isFinite(providerWindowMs) && providerWindowMs > 0 ? providerWindowMs : PROVIDER_REQUEST_WINDOW_MS,
+    cooldownMs: Number.isFinite(providerRateLimitCooldownMs) && providerRateLimitCooldownMs > 0 ? providerRateLimitCooldownMs : PROVIDER_RATE_LIMIT_COOLDOWN_MS,
+    requestTimestamps: [],
+    cooldownUntil: 0,
+  };
   return async function alphaVantageMiddleware(request, response, next) {
     const requestUrl = new URL(request.url, 'http://localhost');
     const isDaily = requestUrl.pathname === DAILY_ROUTE;
@@ -86,10 +111,15 @@ export function createAlphaVantageMiddleware({
       try {
         const providerUrl = new URL('https://www.alphavantage.co/query');
         providerUrl.search = new URLSearchParams({ function: 'GLOBAL_QUOTE', symbol, apikey: apiKey }).toString();
-        const { upstream, providerPayload } = await fetchProviderOnce(inFlight, cacheKey, fetchImpl, providerUrl);
+        const { upstream, providerPayload, budgetBlocked, retryAfterSeconds } = await fetchProviderOnce(inFlight, cacheKey, fetchImpl, providerUrl, providerBudget);
+        if (budgetBlocked) {
+          response.setHeader('Retry-After', String(retryAfterSeconds));
+          return sendJson(response, 429, { status: 'rate_limited', message: 'Market-data provider request budget is temporarily exhausted. Please retry after the indicated delay.' });
+        }
         if (!upstream.ok) return sendJson(response, 502, { status: 'error', message: `Alpha Vantage returned HTTP ${upstream.status}.` });
         if (providerPayload?.Note) {
-          return sendJson(response, 429, { status: 'rate_limited', message: 'The quote provider rate limit was reached.' });
+          response.setHeader('Retry-After', String(Math.ceil(providerBudget.cooldownMs / 1000)));
+          return sendJson(response, 429, { status: 'rate_limited', message: 'The quote provider rate limit was reached. Requests are temporarily paused.' });
         }
         if (providerPayload?.Information) {
           return sendJson(response, 503, { status: 'unavailable', message: 'The quote endpoint is unavailable for the current provider plan or configuration.' });
@@ -147,10 +177,15 @@ export function createAlphaVantageMiddleware({
         outputsize: 'compact',
         apikey: apiKey,
       }).toString();
-      const { upstream, providerPayload } = await fetchProviderOnce(inFlight, `daily:${cacheKey}`, fetchImpl, providerUrl);
+      const { upstream, providerPayload, budgetBlocked, retryAfterSeconds } = await fetchProviderOnce(inFlight, `daily:${cacheKey}`, fetchImpl, providerUrl, providerBudget);
+      if (budgetBlocked) {
+        response.setHeader('Retry-After', String(retryAfterSeconds));
+        return sendJson(response, 429, { status: 'rate_limited', message: 'Market-data provider request budget is temporarily exhausted. Please retry after the indicated delay.' });
+      }
       if (!upstream.ok) return sendJson(response, 502, { status: 'error', message: `Alpha Vantage returned HTTP ${upstream.status}.` });
       if (providerPayload?.Note) {
-        return sendJson(response, 429, { status: 'rate_limited', message: 'Alpha Vantage rate limit reached.' });
+        response.setHeader('Retry-After', String(Math.ceil(providerBudget.cooldownMs / 1000)));
+        return sendJson(response, 429, { status: 'rate_limited', message: 'Alpha Vantage rate limit reached. Requests are temporarily paused.' });
       }
       if (providerPayload?.Information) {
         return sendJson(response, 503, { status: 'unavailable', message: 'This Alpha Vantage endpoint is unavailable for the current provider plan or configuration.' });
