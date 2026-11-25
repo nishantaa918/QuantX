@@ -7,7 +7,7 @@ import * as policy from '../src/strategy-analysis.js';
 import { SUPPORTED_HISTORICAL_SYMBOLS, toPriceSeries } from '../src/market-data.js';
 import * as research from '../src/research-engine.js';
 import { createSimulationController, createSyntheticSimulation } from '../src/simulation-engine.js';
-import { runWalkForwardValidation } from '../src/walk-forward.js';
+import { runWalkForwardCostSensitivity, runWalkForwardValidation } from '../src/walk-forward.js';
 import { analyzeEqualWeightPortfolio, analyzePortfolioCostSensitivity } from '../src/portfolio-research.js';
 import { createRequestVersion } from '../src/request-version.js';
 
@@ -79,6 +79,7 @@ async function bootApplication(storage, fetchImpl = async () => { throw new Erro
     SUPPORTED_HISTORICAL_SYMBOLS,
     toPriceSeries,
     runWalkForwardValidation,
+    runWalkForwardCostSensitivity,
     analyzeEqualWeightPortfolio,
     analyzePortfolioCostSensitivity,
     createRequestVersion,

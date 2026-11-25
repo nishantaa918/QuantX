@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { runWalkForwardValidation } from '../src/walk-forward.js';
+import { runWalkForwardCostSensitivity, runWalkForwardValidation } from '../src/walk-forward.js';
 import { calculateExecutionCostRate, calculateStrategyBacktest } from '../src/strategy-analysis.js';
 
 function makeSeries(length = 140) {
@@ -200,4 +200,53 @@ test('walk-forward volume-impact costs use aligned prior OHLCV and stitched OOS 
     assert.ok(Math.abs(fold.transactionCostsUSD - expectedFoldCosts) < 1e-7);
   }
   assert.ok(Math.abs(result.totalTransactionCostsUSD - expectedTotalCosts) < 1e-7);
+});
+
+test('walk-forward cost sensitivity reruns the complete selection and OOS process', () => {
+  const series = makeSeries(140);
+  const options = {
+    trainWindow: 60,
+    testWindow: 20,
+    step: 20,
+    shortWindows: [3, 5],
+    longWindows: [15, 20],
+    executionCosts: { commissionBps: 1, slippageBps: 5 },
+  };
+  const sensitivity = runWalkForwardCostSensitivity(series, options);
+  const direct = runWalkForwardValidation(series, options);
+
+  assert.equal(sensitivity.valid, true);
+  assert.deepEqual(sensitivity.configuredResult, direct);
+  assert.deepEqual(sensitivity.scenarios.map((scenario) => scenario.label), ['Zero costs', 'Configured', 'Stressed (2×)']);
+  assert.equal(sensitivity.scenarios[0].totalTransactionCostsUSD, 0);
+  assert.ok(sensitivity.scenarios[1].totalTransactionCostsUSD > 0);
+  assert.ok(sensitivity.scenarios.every((scenario) => Number.isFinite(scenario.outOfSampleReturnPct)));
+  assert.equal(sensitivity.scenarios[2].executionCosts.commissionBps, 2);
+  assert.equal(sensitivity.scenarios[2].executionCosts.slippageBps, 10);
+});
+
+test('walk-forward cost sensitivity scales volume-impact assumptions', () => {
+  const base = makeSeries(140);
+  const series = {
+    ...base,
+    observations: base.values.map((close, index) => ({
+      date: base.labels[index],
+      close,
+      rawClose: close,
+      high: close * 1.02,
+      low: close * 0.98,
+      volume: 300_000 + (index % 9) * 100_000,
+    })),
+  };
+  const sensitivity = runWalkForwardCostSensitivity(series, {
+    trainWindow: 60,
+    testWindow: 20,
+    step: 20,
+    shortWindows: [3],
+    longWindows: [15],
+    executionCosts: { commissionBps: 1, slippageModel: 'volume-impact', impactCoefficient: 0.1 },
+  });
+  assert.equal(sensitivity.valid, true);
+  assert.equal(sensitivity.scenarios[2].executionCosts.impactCoefficient, 0.2);
+  assert.ok(sensitivity.scenarios.every((scenario) => scenario.totalTransactionCostsUSD >= 0));
 });
