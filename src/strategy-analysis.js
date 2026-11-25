@@ -158,6 +158,36 @@ function estimateVolumeImpactBps(series, executionIndex, tradedNotional, coeffic
   return { valid: true, slippageBps: Math.min(estimatedBps, 500), participation, rangeFraction };
 }
 
+export function calculateExecutionCostRate(series, executionIndex, turnover, priorNetEquity, executionCosts = DEFAULT_EXECUTION_COSTS) {
+  const validation = validateExecutionCosts(executionCosts);
+  if (!validation.valid) return { valid: false, errors: validation.errors };
+  if (!Number.isInteger(executionIndex) || executionIndex < 1 || !Number.isFinite(turnover) || turnover < 0
+    || !Number.isFinite(priorNetEquity) || priorNetEquity <= 0) {
+    return { valid: false, errors: ['Execution cost calculation requires a valid session, non-negative turnover, and positive prior equity.'] };
+  }
+  const config = validation.config;
+  const model = config.slippageModel ?? 'fixed';
+  let slippageBps = config.slippageBps;
+  if (model === 'volume-impact') {
+    if (turnover === 0) slippageBps = 0;
+    else {
+      const estimate = estimateVolumeImpactBps(
+        series,
+        executionIndex,
+        priorNetEquity * turnover,
+        config.impactCoefficient ?? 0.1,
+      );
+      if (!estimate.valid) return { valid: false, errors: [estimate.error] };
+      slippageBps = estimate.slippageBps;
+    }
+  }
+  return {
+    valid: true,
+    slippageBps,
+    costRate: turnover * (config.commissionBps + slippageBps) / 10_000,
+  };
+}
+
 export function calculateStrategyBacktest(series, parameters = DEFAULT_STRATEGY, startingCapital = 100_000, executionCosts = DEFAULT_EXECUTION_COSTS) {
   const validation = validateStrategyParameters(parameters);
   const costValidation = validateExecutionCosts(executionCosts);
@@ -226,11 +256,9 @@ export function calculateStrategyBacktest(series, parameters = DEFAULT_STRATEGY,
     const priorNetEquity = equityCurve.at(-1) ?? startingCapital;
     const priorGrossEquity = grossEquityCurve.at(-1) ?? startingCapital;
     const tradedNotional = priorNetEquity * turnover;
-    const impact = costValidation.config.slippageModel === 'volume-impact' && turnover > 0
-      ? estimateVolumeImpactBps(series, index, tradedNotional, costValidation.config.impactCoefficient ?? 0.1)
-      : { valid: true, slippageBps: costValidation.config.slippageModel === 'volume-impact' ? 0 : costValidation.config.slippageBps };
-    slippageEstimatesBps.push(impact.slippageBps);
-    const costRate = turnover * (costValidation.config.commissionBps + impact.slippageBps) / 10_000;
+    const executionCost = calculateExecutionCostRate(series, index, turnover, priorNetEquity, costValidation.config);
+    slippageEstimatesBps.push(executionCost.slippageBps);
+    const costRate = executionCost.costRate;
     const netSessionReturn = grossSessionReturn - costRate;
     const costAmount = priorNetEquity * costRate;
 
