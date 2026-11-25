@@ -285,11 +285,12 @@ test('parameter sweeps and shared policy state preserve volume-impact execution 
 
   assert.equal(direct.valid, true);
   assert.equal(sweep.length, 1);
-  assert.deepEqual(sweep[0].executionCosts, executionCosts);
+  const normalizedCosts = { commissionBps: 2, slippageBps: 5, slippageModel: 'volume-impact', impactCoefficient: 0.15 };
+  assert.deepEqual(sweep[0].executionCosts, normalizedCosts);
   assert.deepEqual(sweep[0].metrics, calculatePerformance(direct.equityCurve.slice(5)));
   assert.ok(direct.totalTransactionCostsUSD > 0);
-  assert.deepEqual(state.currentBacktest.executionCosts, executionCosts);
-  assert.deepEqual(state.latestBacktest.executionCosts, executionCosts);
+  assert.deepEqual(state.currentBacktest.executionCosts, normalizedCosts);
+  assert.deepEqual(state.latestBacktest.executionCosts, normalizedCosts);
   assert.ok(state.latestBacktest.totalTransactionCostsUSD > 0);
   assert.equal(JSON.stringify(series), snapshot);
 });
