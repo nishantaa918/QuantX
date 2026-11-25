@@ -483,3 +483,97 @@ test('daily cache expires according to its configured TTL', async () => {
   assert.equal((await request()).status, 200);
   assert.equal(calls, 2, 'an expired daily snapshot should be fetched again');
 });
+
+
+test('simultaneous quote cache misses share one provider request', async () => {
+  let calls = 0;
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  const handler = createMarketDataApiHandler({
+    apiKey: 'quote-single-flight-key',
+    fetchImpl: async () => {
+      calls += 1;
+      await gate;
+      return { ok: true, json: async () => validQuote('AAPL', 175) };
+    },
+  });
+  const request = async () => {
+    const response = responseRecorder();
+    await handler({ method: 'GET', url: '/api/market-data/quote?symbol=AAPL' }, response);
+    return response.result();
+  };
+
+  const first = request();
+  const second = request();
+  assert.equal(calls, 1, 'concurrent misses for one quote should start one upstream request');
+  release();
+  const [a, b] = await Promise.all([first, second]);
+  assert.equal(a.status, 200);
+  assert.equal(b.status, 200);
+  assert.deepEqual(a.body, b.body);
+  assert.equal(calls, 1);
+});
+
+test('simultaneous daily cache misses share one provider request', async () => {
+  let calls = 0;
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  const handler = createMarketDataApiHandler({
+    apiKey: 'daily-single-flight-key',
+    fetchImpl: async (url) => {
+      calls += 1;
+      await gate;
+      const symbol = new URL(url).searchParams.get('symbol');
+      return { ok: true, json: async () => dailyProviderPayload(symbol) };
+    },
+  });
+  const request = async () => {
+    const response = responseRecorder();
+    await handler({ method: 'GET', url: '/api/market-data/daily?symbol=AAPL' }, response);
+    return response.result();
+  };
+
+  const first = request();
+  const second = request();
+  assert.equal(calls, 1, 'concurrent misses for one daily series should start one upstream request');
+  release();
+  const [a, b] = await Promise.all([first, second]);
+  assert.equal(a.status, 200);
+  assert.equal(b.status, 200);
+  assert.deepEqual(a.body, b.body);
+  assert.equal(calls, 1);
+});
+
+test('failed shared provider requests are cleared so a later request can retry', async () => {
+  let calls = 0;
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  const handler = createMarketDataApiHandler({
+    apiKey: 'single-flight-retry-key',
+    fetchImpl: async () => {
+      calls += 1;
+      if (calls === 1) {
+        await gate;
+        return { ok: false, status: 503, json: async () => ({}) };
+      }
+      return { ok: true, json: async () => validQuote('AAPL', 180) };
+    },
+  });
+  const request = async () => {
+    const response = responseRecorder();
+    await handler({ method: 'GET', url: '/api/market-data/quote?symbol=AAPL' }, response);
+    return response.result();
+  };
+
+  const first = request();
+  const second = request();
+  assert.equal(calls, 1);
+  release();
+  const [failedA, failedB] = await Promise.all([first, second]);
+  assert.equal(failedA.status, 502);
+  assert.equal(failedB.status, 502);
+  const retry = await request();
+  assert.equal(retry.status, 200);
+  assert.equal(retry.body.data.price, 180);
+  assert.equal(calls, 2);
+});
