@@ -91,6 +91,9 @@ export function runMonteCarlo(scenarioCount, years, series, seed = 1, options = 
   if (!Number.isInteger(scenarioCount) || scenarioCount < 100 || scenarioCount > 10_000 || !Number.isInteger(years) || years < 1 || years > 5) {
     return { valid: false, error: 'Use 100-10,000 scenarios and a whole-year horizon from 1 to 5.' };
   }
+  if (options.blockLength !== undefined && (!Number.isInteger(options.blockLength) || options.blockLength <= 0)) {
+    return { valid: false, error: 'Block length must be a positive integer.' };
+  }
   const values = series?.values;
   if (!Array.isArray(values) || values.length < MONTE_CARLO_MIN_RETURNS + 1 || !values.every((value) => Number.isFinite(value) && value > 0)) {
     return { valid: false, error: `Monte Carlo needs at least ${MONTE_CARLO_MIN_RETURNS + 1} valid price observations (60 returns). Select a longer series or load historical data.` };
