@@ -100,7 +100,11 @@ test('walk-forward transaction costs are scaled to stitched out-of-sample capita
 });
 
 test('walk-forward validation rejects misaligned, duplicate, and out-of-order calendar labels', () => {
-  const series = makeSeries();
+  const base = makeSeries();
+  const series = {
+    ...base,
+    labels: base.values.map((_, index) => new Date(Date.UTC(2025, 0, index + 1)).toISOString().slice(0, 10)),
+  };
   assert.equal(runWalkForwardValidation({ ...series, labels: series.labels.slice(1) }).valid, false);
 
   const duplicate = [...series.labels];
