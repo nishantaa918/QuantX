@@ -6,9 +6,27 @@ import {
 } from './strategy-analysis.js';
 
 function validSeries(series) {
-  return Array.isArray(series?.values)
-    && series.values.length > 1
-    && series.values.every((value) => Number.isFinite(value) && value > 0);
+  if (!Array.isArray(series?.values)
+    || series.values.length <= 1
+    || !series.values.every((value) => Number.isFinite(value) && value > 0)) return false;
+  if (series.labels === undefined) return true;
+  if (!Array.isArray(series.labels)
+    || series.labels.length !== series.values.length
+    || !series.labels.every((label) => typeof label === 'string' && label.trim().length > 0)
+    || new Set(series.labels).size !== series.labels.length) return false;
+
+  const calendarLabels = series.labels.every((label) => /^\d{4}-\d{2}-\d{2}$/.test(label));
+  if (!calendarLabels) return true;
+  return series.labels.every((label, index) => {
+    const [year, month, day] = label.split('-').map(Number);
+    const date = new Date(0);
+    date.setUTCHours(0, 0, 0, 0);
+    date.setUTCFullYear(year, month - 1, day);
+    const isValidDate = date.getUTCFullYear() === year
+      && date.getUTCMonth() === month - 1
+      && date.getUTCDate() === day;
+    return isValidDate && (index === 0 || label > series.labels[index - 1]);
+  });
 }
 
 function sliceSeries(series, start, end) {
