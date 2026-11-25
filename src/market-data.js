@@ -74,10 +74,11 @@ export function normalizeAlphaVantageDaily(payload, { symbol = 'AAPL', limit = 1
   if (!payload || typeof payload !== 'object' || Array.isArray(payload)) throw new Error('The provider returned an invalid response.');
   const providerMessage = payload['Error Message'] ?? payload.Note ?? payload.Information;
   if (providerMessage) throw new Error(String(providerMessage));
-  const metadata = payload['Meta Data'] ?? {};
-  const providerSymbol = metadata['2. Symbol'];
-  if (providerSymbol && (typeof providerSymbol !== 'string' || providerSymbol.toUpperCase() !== symbol.toUpperCase())) {
-    throw new Error(`Provider returned an unexpected symbol instead of ${symbol}.`);
+  const metadata = payload['Meta Data'];
+  const providerSymbol = metadata?.['2. Symbol'];
+  if (typeof providerSymbol !== 'string' || !providerSymbol.trim()
+    || providerSymbol.trim().toUpperCase() !== symbol.trim().toUpperCase()) {
+    throw new Error(`Provider returned missing or unexpected symbol metadata instead of ${symbol}.`);
   }
   const adjustedSeries = payload['Time Series (Daily Adjusted)'];
   const dailySeries = adjustedSeries ?? payload['Time Series (Daily)'];
