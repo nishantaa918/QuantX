@@ -8,7 +8,7 @@ import { SUPPORTED_HISTORICAL_SYMBOLS, toPriceSeries } from '../src/market-data.
 import * as research from '../src/research-engine.js';
 import { createSimulationController, createSyntheticSimulation } from '../src/simulation-engine.js';
 import { runWalkForwardValidation } from '../src/walk-forward.js';
-import { analyzeEqualWeightPortfolio } from '../src/portfolio-research.js';
+import { analyzeEqualWeightPortfolio, analyzePortfolioCostSensitivity } from '../src/portfolio-research.js';
 import { createRequestVersion } from '../src/request-version.js';
 
 class ElementStub {
@@ -80,6 +80,7 @@ async function bootApplication(storage, fetchImpl = async () => { throw new Erro
     toPriceSeries,
     runWalkForwardValidation,
     analyzeEqualWeightPortfolio,
+    analyzePortfolioCostSensitivity,
     createRequestVersion,
     createPriceChart: () => chart,
     createLiveSimulationChart: () => chart,
