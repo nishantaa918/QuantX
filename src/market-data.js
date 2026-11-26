@@ -65,6 +65,11 @@ export function normalizeAlphaVantageRows(rows, { symbol = 'AAPL', limit = 100 }
   const byDate = new Map();
   for (const row of rows) {
     if (!row || !validateDate(row.date)) throw new Error(`Invalid daily observation date: ${row?.date ?? 'missing'}.`);
+    if (row.symbol !== undefined
+      && (typeof row.symbol !== 'string' || !row.symbol.trim()
+        || row.symbol.trim().toUpperCase() !== normalizedSymbol)) {
+      throw new Error(`Daily observation symbol does not match requested ticker ${normalizedSymbol}.`);
+    }
     const open = parsePositiveNumber(row.open, 'open', row.date);
     const high = parsePositiveNumber(row.high, 'high', row.date);
     const low = parsePositiveNumber(row.low, 'low', row.date);
