@@ -151,12 +151,17 @@ export function toPriceSeries(observations, { symbol = 'AAPL', priceBasis = 'raw
     throw new Error('Historical backtesting requires at least two daily observations.');
   }
   if (!['raw', 'adjusted'].includes(priceBasis)) throw new Error('Price basis must be raw or adjusted.');
-  const normalizedSymbol = String(symbol).trim().toUpperCase();
-  if (!normalizedSymbol) throw new Error('A valid ticker symbol is required.');
+  if (typeof symbol !== 'string' || !symbol.trim()) throw new Error('A valid ticker symbol is required.');
+  const normalizedSymbol = symbol.trim().toUpperCase();
   let previousDate = '';
   const cleanObservations = observations.map((observation) => {
     if (!observation || !validateDate(observation.date) || observation.date <= previousDate) {
       throw new Error('Historical observations must have unique, ascending calendar dates.');
+    }
+    if (observation.symbol !== undefined
+      && (typeof observation.symbol !== 'string' || !observation.symbol.trim()
+        || observation.symbol.trim().toUpperCase() !== normalizedSymbol)) {
+      throw new Error('Historical observations must all match the requested ticker symbol.');
     }
     previousDate = observation.date;
     const close = parsePositiveNumber(
