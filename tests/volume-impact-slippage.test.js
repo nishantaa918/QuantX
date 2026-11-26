@@ -6,12 +6,14 @@ const strategy = { type: 'moving-average', shortWindow: 2, longWindow: 6, lookba
 
 function historicalSeries(volume = 1_000_000) {
   const values = Array.from({ length: 100 }, (_, index) => 100 + Math.sin(index * 0.83) * 8 + Math.sin(index * 0.19) * 3);
+  const observations = values.map((close, index) => ({
+    date: `2025-01-${String(index + 1).padStart(2, '0')}`,
+    close, rawClose: close, high: close * 1.02, low: close * 0.98, volume,
+  }));
   return {
     values,
-    observations: values.map((close, index) => ({
-      date: `2025-01-${String(index + 1).padStart(2, '0')}`,
-      close, rawClose: close, high: close * 1.02, low: close * 0.98, volume,
-    })),
+    labels: observations.map((observation) => observation.date),
+    observations,
   };
 }
 
@@ -51,6 +53,29 @@ test('volume-impact model rejects absent or invalid historical OHLCV', () => {
   assert.equal(missing.valid, false);
   assert.match(missing.errors.join(' '), /aligned historical OHLCV/);
   assert.equal(invalid.valid, false);
+});
+
+
+test('volume-impact model rejects OHLCV observations misaligned with dates or close prices', () => {
+  const costs = { slippageModel: 'volume-impact', impactCoefficient: 0.1 };
+
+  const wrongDate = historicalSeries();
+  wrongDate.observations[20].date = '2025-02-20';
+  const wrongDateResult = calculateStrategyBacktest(wrongDate, strategy, 100_000, costs);
+
+  const wrongClose = historicalSeries();
+  wrongClose.observations[20].close += 0.01;
+  const wrongCloseResult = calculateStrategyBacktest(wrongClose, strategy, 100_000, costs);
+
+  const missingLabels = historicalSeries();
+  delete missingLabels.labels;
+  const missingLabelsResult = calculateStrategyBacktest(missingLabels, strategy, 100_000, costs);
+
+  assert.equal(wrongDateResult.valid, false);
+  assert.equal(wrongCloseResult.valid, false);
+  assert.equal(missingLabelsResult.valid, false);
+  assert.match(wrongDateResult.errors.join(' '), /aligned historical OHLCV/);
+  assert.match(wrongCloseResult.errors.join(' '), /aligned historical OHLCV/);
 });
 
 test('volume-impact model validates model names and coefficient boundaries', () => {
