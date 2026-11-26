@@ -952,3 +952,35 @@ test('malformed provider payloads are not cached and can be retried for both mar
   assert.equal(recoveredDaily.body.data.symbol, 'AAPL');
   assert.equal(dailyCalls, 2, 'a mismatched daily series must not poison the cache');
 });
+
+
+test('adjusted daily data missing corporate-action fields is not cached and can recover', async () => {
+  let calls = 0;
+  const handler = createMarketDataApiHandler({
+    apiKey: 'adjusted-recovery-key',
+    fetchImpl: async (url) => {
+      calls += 1;
+      const symbol = new URL(url).searchParams.get('symbol');
+      if (calls === 1) {
+        return { ok: true, json: async () => dailyProviderPayload(symbol, false) };
+      }
+      return { ok: true, json: async () => dailyProviderPayload(symbol, true) };
+    },
+  });
+
+  const request = async () => {
+    const response = responseRecorder();
+    await handler({ method: 'GET', url: '/api/market-data/daily?symbol=AAPL&adjustment=adjusted' }, response);
+    return response.result();
+  };
+
+  const incomplete = await request();
+  assert.equal(incomplete.status, 502);
+  assert.match(incomplete.body.message, /adjusted closes and corporate-action fields/i);
+
+  const recovered = await request();
+  assert.equal(recovered.status, 200);
+  assert.equal(recovered.body.data.requestedAdjustment, 'adjusted');
+  assert.equal(recovered.body.data.adjustment, 'raw_with_adjusted_close');
+  assert.equal(calls, 2, 'an incomplete adjusted response must not poison the cache');
+});
