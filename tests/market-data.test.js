@@ -444,3 +444,26 @@ test('historical normalizer rejects non-decimal numeric coercions from provider 
   assert.equal(valid[0].volume, 300);
   assert.equal(valid[0].dividendAmount, 0.25);
 });
+
+
+test('historical row normalization rejects invalid ticker symbols and canonicalizes valid symbols', () => {
+  for (const symbol of ['', '   ', null, undefined, 42]) {
+    assert.throws(
+      () => normalizeAlphaVantageRows(rows, { symbol }),
+      /valid ticker symbol/,
+      `symbol ${String(symbol)} should be rejected`,
+    );
+  }
+
+  const normalized = normalizeAlphaVantageRows(rows, { symbol: ' aapl ' });
+  assert.ok(normalized.every((observation) => observation.symbol === 'AAPL'));
+  assert.equal(normalizeAlphaVantageDaily(dailyPayload(), { symbol: ' aapl ' }).symbol, 'AAPL');
+
+  for (const symbol of ['', '   ', null, 42]) {
+    assert.throws(
+      () => normalizeAlphaVantageDaily(dailyPayload(), { symbol }),
+      /valid ticker symbol/,
+      `daily symbol ${String(symbol)} should be rejected`,
+    );
+  }
+});
