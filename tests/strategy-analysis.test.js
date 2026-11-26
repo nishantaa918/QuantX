@@ -313,16 +313,18 @@ test('single-asset cost sensitivity compares zero, configured, and stressed assu
 
 test('single-asset volume-impact sensitivity doubles the coefficient without mutating OHLCV', () => {
   const values = Array.from({ length: 100 }, (_, index) => 100 + Math.sin(index * 0.83) * 8 + Math.sin(index * 0.19) * 3);
+  const observations = values.map((close, index) => ({
+    date: `2025-Session-${index + 1}`,
+    close,
+    rawClose: close,
+    high: close * 1.02,
+    low: close * 0.98,
+    volume: 250_000 + (index % 7) * 100_000,
+  }));
   const series = {
     values,
-    observations: values.map((close, index) => ({
-      date: `2025-Session-${index + 1}`,
-      close,
-      rawClose: close,
-      high: close * 1.02,
-      low: close * 0.98,
-      volume: 250_000 + (index % 7) * 100_000,
-    })),
+    labels: observations.map((observation) => observation.date),
+    observations,
   };
   const snapshot = JSON.stringify(series);
   const sensitivity = analyzeExecutionCostSensitivity(series, activeStrategy, 100_000, {
