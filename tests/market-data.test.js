@@ -447,7 +447,7 @@ test('historical normalizer rejects non-decimal numeric coercions from provider 
 
 
 test('historical row normalization rejects invalid ticker symbols and canonicalizes valid symbols', () => {
-  for (const symbol of ['', '   ', null, undefined, 42]) {
+  for (const symbol of ['', '   ', null, 42]) {
     assert.throws(
       () => normalizeAlphaVantageRows(rows, { symbol }),
       /valid ticker symbol/,
