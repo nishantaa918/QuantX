@@ -3,16 +3,33 @@ export const SUPPORTED_HISTORICAL_SYMBOLS = Object.freeze(['AAPL', 'MSFT', 'NVDA
 const SOURCE = 'alpha_vantage';
 const FREQUENCY = '1d';
 
+function parseDecimalNumber(value, field, date) {
+  if (typeof value === 'number') {
+    if (!Number.isFinite(value)) throw new Error(`Invalid ${field} value for ${date}.`);
+    return value;
+  }
+  if (typeof value !== 'string') throw new Error(`Invalid ${field} value for ${date}.`);
+  const normalized = value.trim();
+  // Alpha Vantage sends decimal strings. Reject JavaScript-only numeric
+  // syntaxes (hex, binary, octal, separators, and exponent notation).
+  if (!/^(?:\d+(?:\.\d*)?|\.\d+)$/.test(normalized)) {
+    throw new Error(`Invalid ${field} value for ${date}.`);
+  }
+  const number = Number(normalized);
+  if (!Number.isFinite(number)) throw new Error(`Invalid ${field} value for ${date}.`);
+  return number;
+}
+
 function parsePositiveNumber(value, field, date) {
-  const number = typeof value === 'number' ? value : Number(String(value ?? '').trim());
-  if (!Number.isFinite(number) || number <= 0) throw new Error(`Invalid ${field} value for ${date}.`);
+  const number = parseDecimalNumber(value, field, date);
+  if (number <= 0) throw new Error(`Invalid ${field} value for ${date}.`);
   return number;
 }
 
 function parseNonNegativeNumber(value, field, date, fallback = 0) {
   if (value === undefined || value === null || (typeof value === 'string' && value.trim() === '')) return fallback;
-  const number = typeof value === 'number' ? value : Number(String(value).trim());
-  if (!Number.isFinite(number) || number < 0) throw new Error(`Invalid ${field} value for ${date}.`);
+  const number = parseDecimalNumber(value, field, date);
+  if (number < 0) throw new Error(`Invalid ${field} value for ${date}.`);
   return number;
 }
 
@@ -20,7 +37,13 @@ function parseVolume(value, date) {
   if (value === undefined || value === null || (typeof value === 'string' && value.trim() === '')) {
     throw new Error(`Missing volume value for ${date}.`);
   }
-  const number = typeof value === 'number' ? value : Number(String(value).trim());
+  if (typeof value !== 'number' && typeof value !== 'string') {
+    throw new Error(`Invalid volume value for ${date}.`);
+  }
+  if (typeof value === 'string' && !/^\d+$/.test(value.trim())) {
+    throw new Error(`Invalid volume value for ${date}.`);
+  }
+  const number = typeof value === 'number' ? value : Number(value.trim());
   if (!Number.isSafeInteger(number) || number < 0) throw new Error(`Invalid volume value for ${date}.`);
   return number;
 }

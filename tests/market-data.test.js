@@ -390,3 +390,39 @@ test('NVDA split and dividend reference fixture preserves raw bars in adjusted-c
   assert.deepEqual(adjusted.observations.map(({ close }) => close), [121.5, 123.4]);
   assert.deepEqual(adjusted.observations.map(({ rawClose }) => rawClose), [122, 124]);
 });
+
+
+test('historical normalizer rejects non-decimal numeric coercions from provider payloads', () => {
+  for (const open of ['0x64', '0b1100100', '1e2', '1_00', true]) {
+    assert.throws(
+      () => normalizeAlphaVantageRows([{ ...rows[0], open }]),
+      /open/,
+      `open value ${String(open)} should use a decimal representation`,
+    );
+  }
+
+  for (const volume of ['0x64', '0b1100100', '1e2', '1_000', true]) {
+    assert.throws(
+      () => normalizeAlphaVantageRows([{ ...rows[0], volume }]),
+      /volume/,
+      `volume value ${String(volume)} should use an integer decimal representation`,
+    );
+  }
+
+  for (const dividendAmount of ['1e-2', '0x1', true]) {
+    assert.throws(
+      () => normalizeAlphaVantageRows([{ ...rows[0], dividendAmount }]),
+      /dividend amount/,
+      `dividend amount ${String(dividendAmount)} should use a decimal representation`,
+    );
+  }
+
+  const valid = normalizeAlphaVantageRows([{
+    ...rows[0], open: '103.25', high: '105.50', low: '102.75',
+    close: '104.125', volume: '300', dividendAmount: '0.25',
+    adjustedClose: '103.875', splitCoefficient: '1.0',
+  }]);
+  assert.equal(valid[0].open, 103.25);
+  assert.equal(valid[0].volume, 300);
+  assert.equal(valid[0].dividendAmount, 0.25);
+});
