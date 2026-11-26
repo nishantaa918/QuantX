@@ -160,6 +160,24 @@ test('historical observations become a dated close-price series without syntheti
 });
 
 
+test('historical price series rejects observations belonging to a different ticker', () => {
+  const observations = normalizeAlphaVantageRows(rows, { symbol: 'AAPL' });
+  const mixedSymbols = observations.map((observation) => ({ ...observation }));
+  mixedSymbols[1].symbol = 'MSFT';
+
+  assert.throws(
+    () => toPriceSeries(mixedSymbols, { symbol: 'AAPL' }),
+    /match the requested ticker symbol/,
+  );
+  assert.throws(() => toPriceSeries(observations, { symbol: null }), /valid ticker symbol/);
+
+  const matchingCaseVariant = observations.map((observation) => ({
+    ...observation,
+    symbol: ' aapl ',
+  }));
+  assert.equal(toPriceSeries(matchingCaseVariant, { symbol: 'AAPL' }).symbol, 'AAPL');
+});
+
 test('historical dated close series runs through the existing strategy backtest engine', () => {
   const observations = Array.from({ length: 40 }, (_, index) => {
     const date = new Date(Date.UTC(2025, 0, 1 + index)).toISOString().slice(0, 10);
