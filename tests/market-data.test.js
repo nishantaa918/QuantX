@@ -484,3 +484,27 @@ test('historical row normalization rejects invalid ticker symbols and canonicali
     );
   }
 });
+
+
+test('historical normalization preserves legitimate weekend and US market-holiday gaps', () => {
+  // Friday 2025-01-17 to Tuesday 2025-01-21 spans the weekend and
+  // the Monday 2025-01-20 US market holiday (Martin Luther King Jr. Day).
+  const calendarRows = [
+    { date: '2025-01-22', open: '104', high: '106', low: '103', close: '105', volume: '300' },
+    { date: '2025-01-21', open: '103', high: '105', low: '102', close: '104', volume: '200' },
+    { date: '2025-01-17', open: '100', high: '102', low: '99', close: '101', volume: '100' },
+  ];
+
+  const observations = normalizeAlphaVantageRows(calendarRows, { symbol: 'AAPL' });
+  const series = toPriceSeries(observations, { symbol: 'AAPL' });
+
+  assert.deepEqual(observations.map((observation) => observation.date), [
+    '2025-01-17',
+    '2025-01-21',
+    '2025-01-22',
+  ]);
+  assert.deepEqual(series.labels, ['2025-01-17', '2025-01-21', '2025-01-22']);
+  assert.deepEqual(series.values, [101, 104, 105]);
+  assert.equal(observations.some((observation) => observation.date === '2025-01-20'), false);
+  assert.equal(observations.length, calendarRows.length);
+});
