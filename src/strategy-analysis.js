@@ -138,8 +138,13 @@ function estimateVolumeImpactBps(series, executionIndex, tradedNotional, coeffic
   // volume/range is not known when the next-session order is submitted.
   const observation = series?.observations?.[executionIndex - 1];
   const close = observation?.rawClose ?? observation?.close;
+  const expectedClose = series?.values?.[executionIndex - 1];
+  const expectedLabel = series?.labels?.[executionIndex - 1];
   const { high, low, volume } = observation ?? {};
-  if (![close, high, low, volume].every(Number.isFinite) || close <= 0 || high < low || volume <= 0) {
+  const labelsAligned = !Array.isArray(series?.labels) || expectedLabel === observation?.date;
+  if (![close, high, low, volume, expectedClose].every(Number.isFinite)
+    || close <= 0 || high < low || volume <= 0
+    || observation?.close !== expectedClose || !labelsAligned) {
     return { valid: false, error: 'Volume-impact slippage requires aligned historical OHLCV observations with positive volume and a valid prior-session range.' };
   }
   const dollarVolume = close * volume;
@@ -197,9 +202,12 @@ export function calculateStrategyBacktest(series, parameters = DEFAULT_STRATEGY,
   const values = series?.values;
   const volumeImpactSeriesValid = costValidation.config.slippageModel !== 'volume-impact'
     || (Array.isArray(series?.observations) && series.observations.length === values?.length
-      && series.observations.every((observation) => {
+      && Array.isArray(series?.labels) && series.labels.length === values?.length
+      && series.observations.every((observation, index) => {
         const close = observation?.rawClose ?? observation?.close;
-        return [close, observation?.high, observation?.low, observation?.volume].every(Number.isFinite)
+        return [close, observation?.close, observation?.high, observation?.low, observation?.volume].every(Number.isFinite)
+          && observation.close === values[index]
+          && observation.date === series.labels[index]
           && close > 0 && observation.high >= observation.low && observation.volume > 0;
       }));
   if (!validation.valid || !costValidation.valid || !finiteSeries(values) || !Number.isFinite(startingCapital) || startingCapital <= 0 || !volumeImpactSeriesValid) {
