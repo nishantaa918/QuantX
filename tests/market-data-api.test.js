@@ -1054,3 +1054,44 @@ test('provider rate limit during forced quote refresh preserves the last success
   assert.equal(afterFailure.body.data.price, 215);
   assert.equal(calls, 2, 'a provider rate limit must preserve the previous valid quote cache entry');
 });
+
+
+test('quote endpoint rejects invalid numeric and date fields without caching them', async () => {
+  let calls = 0;
+  const handler = createMarketDataApiHandler({
+    apiKey: 'quote-field-validation-retry-key',
+    fetchImpl: async () => {
+      calls += 1;
+      if (calls === 1) {
+        const malformed = validQuote('AAPL', 220);
+        malformed['Global Quote']['06. volume'] = '12.5';
+        return { ok: true, json: async () => malformed };
+      }
+      if (calls === 2) {
+        const malformed = validQuote('AAPL', 220);
+        malformed['Global Quote']['07. latest trading day'] = '2026-02-30';
+        return { ok: true, json: async () => malformed };
+      }
+      return { ok: true, json: async () => validQuote('AAPL', 220) };
+    },
+  });
+
+  const request = async () => {
+    const response = responseRecorder();
+    await handler({ method: 'GET', url: '/api/market-data/quote?symbol=AAPL' }, response);
+    return response.result();
+  };
+
+  const invalidVolume = await request();
+  assert.equal(invalidVolume.status, 502);
+  assert.match(invalidVolume.body.message, /no complete quote snapshot/i);
+
+  const invalidDate = await request();
+  assert.equal(invalidDate.status, 502);
+  assert.match(invalidDate.body.message, /no complete quote snapshot/i);
+
+  const recovered = await request();
+  assert.equal(recovered.status, 200);
+  assert.equal(recovered.body.data.price, 220);
+  assert.equal(calls, 3, 'invalid quote fields must never be cached');
+});
