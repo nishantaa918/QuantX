@@ -3,6 +3,13 @@ export const SUPPORTED_HISTORICAL_SYMBOLS = Object.freeze(['AAPL', 'MSFT', 'NVDA
 const SOURCE = 'alpha_vantage';
 const FREQUENCY = '1d';
 
+function normalizeSymbol(symbol) {
+  if (typeof symbol !== 'string' || !symbol.trim()) {
+    throw new Error('A valid ticker symbol is required.');
+  }
+  return symbol.trim().toUpperCase();
+}
+
 function parseDecimalNumber(value, field, date) {
   if (typeof value === 'number') {
     if (!Number.isFinite(value)) throw new Error(`Invalid ${field} value for ${date}.`);
@@ -10,8 +17,6 @@ function parseDecimalNumber(value, field, date) {
   }
   if (typeof value !== 'string') throw new Error(`Invalid ${field} value for ${date}.`);
   const normalized = value.trim();
-  // Alpha Vantage sends decimal strings. Reject JavaScript-only numeric
-  // syntaxes (hex, binary, octal, separators, and exponent notation).
   if (!/^(?:\d+(?:\.\d*)?|\.\d+)$/.test(normalized)) {
     throw new Error(`Invalid ${field} value for ${date}.`);
   }
@@ -55,6 +60,7 @@ function validateDate(value) {
 }
 
 export function normalizeAlphaVantageRows(rows, { symbol = 'AAPL', limit = 100 } = {}) {
+  const normalizedSymbol = normalizeSymbol(symbol);
   if (!Array.isArray(rows) || !Number.isInteger(limit) || limit < 1) throw new Error('Invalid daily observation data.');
   const byDate = new Map();
   for (const row of rows) {
@@ -75,7 +81,7 @@ export function normalizeAlphaVantageRows(rows, { symbol = 'AAPL', limit = 100 }
       throw new Error(`Inconsistent OHLC prices for ${row.date}.`);
     }
     const normalizedRow = {
-      symbol, date: row.date, open, high, low, close, volume,
+      symbol: normalizedSymbol, date: row.date, open, high, low, close, volume,
       adjustedClose, dividendAmount, splitCoefficient,
       source: SOURCE, frequency: FREQUENCY, adjustment: 'raw',
     };
@@ -94,20 +100,19 @@ export function normalizeAlphaVantageRows(rows, { symbol = 'AAPL', limit = 100 }
 }
 
 export function normalizeAlphaVantageDaily(payload, { symbol = 'AAPL', limit = 100 } = {}) {
+  const normalizedSymbol = normalizeSymbol(symbol);
   if (!payload || typeof payload !== 'object' || Array.isArray(payload)) throw new Error('The provider returned an invalid response.');
   const providerMessage = payload['Error Message'] ?? payload.Note ?? payload.Information;
   if (providerMessage) throw new Error(String(providerMessage));
   const metadata = payload['Meta Data'];
   const providerSymbol = metadata?.['2. Symbol'];
   if (typeof providerSymbol !== 'string' || !providerSymbol.trim()
-    || providerSymbol.trim().toUpperCase() !== symbol.trim().toUpperCase()) {
-    throw new Error(`Provider returned missing or unexpected symbol metadata instead of ${symbol}.`);
+    || providerSymbol.trim().toUpperCase() !== normalizedSymbol) {
+    throw new Error(`Provider returned missing or unexpected symbol metadata instead of ${normalizedSymbol}.`);
   }
   const adjustedSeries = payload['Time Series (Daily Adjusted)'];
   const dailySeries = adjustedSeries ?? payload['Time Series (Daily)'];
   if (!dailySeries || typeof dailySeries !== 'object' || Array.isArray(dailySeries)) throw new Error('The provider response contains no daily time series.');
-  // Alpha Vantage's adjusted endpoint may use either container label. Detect
-  // adjusted payloads from their schema too, not only from the container name.
   const hasAdjustedFields = Object.values(dailySeries).some((daily) => daily
     && typeof daily === 'object'
     && ['5. adjusted close', '7. dividend amount', '8. split coefficient']
@@ -131,10 +136,10 @@ export function normalizeAlphaVantageDaily(payload, { symbol = 'AAPL', limit = 1
       splitCoefficient: daily['8. split coefficient'],
     };
   });
-  const observations = normalizeAlphaVantageRows(rows, { symbol: symbol.toUpperCase(), limit });
+  const observations = normalizeAlphaVantageRows(rows, { symbol: normalizedSymbol, limit });
   const hasAdjustedClose = observations.every((observation) => Number.isFinite(observation.adjustedClose));
   return {
-    symbol: symbol.toUpperCase(),
+    symbol: normalizedSymbol,
     observations,
     source: SOURCE,
     frequency: FREQUENCY,
@@ -151,8 +156,7 @@ export function toPriceSeries(observations, { symbol = 'AAPL', priceBasis = 'raw
     throw new Error('Historical backtesting requires at least two daily observations.');
   }
   if (!['raw', 'adjusted'].includes(priceBasis)) throw new Error('Price basis must be raw or adjusted.');
-  if (typeof symbol !== 'string' || !symbol.trim()) throw new Error('A valid ticker symbol is required.');
-  const normalizedSymbol = symbol.trim().toUpperCase();
+  const normalizedSymbol = normalizeSymbol(symbol);
   let previousDate = '';
   const cleanObservations = observations.map((observation) => {
     if (!observation || !validateDate(observation.date) || observation.date <= previousDate) {
