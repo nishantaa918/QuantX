@@ -446,6 +446,23 @@ test('historical normalizer rejects non-decimal numeric coercions from provider 
 });
 
 
+test('historical row normalization rejects supplied mismatched ticker metadata', () => {
+  assert.throws(
+    () => normalizeAlphaVantageRows([{ ...rows[0], symbol: 'MSFT' }], { symbol: 'AAPL' }),
+    /does not match requested ticker AAPL/,
+  );
+  assert.throws(
+    () => normalizeAlphaVantageRows([{ ...rows[0], symbol: '   ' }], { symbol: 'AAPL' }),
+    /does not match requested ticker AAPL/,
+  );
+  assert.throws(
+    () => normalizeAlphaVantageRows([{ ...rows[0], symbol: 42 }], { symbol: 'AAPL' }),
+    /does not match requested ticker AAPL/,
+  );
+  const matching = normalizeAlphaVantageRows([{ ...rows[0], symbol: ' aapl ' }], { symbol: 'AAPL' });
+  assert.equal(matching[0].symbol, 'AAPL');
+});
+
 test('historical row normalization rejects invalid ticker symbols and canonicalizes valid symbols', () => {
   for (const symbol of ['', '   ', null, 42]) {
     assert.throws(
