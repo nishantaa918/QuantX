@@ -1017,3 +1017,40 @@ test('failed quote refresh preserves the last successful cached snapshot', async
   assert.equal(afterFailure.body.data.price, 210);
   assert.equal(calls, 2, 'a failed forced refresh must leave the previous valid cache entry available');
 });
+
+
+test('provider rate limit during forced quote refresh preserves the last successful cached snapshot', async () => {
+  let calls = 0;
+  const handler = createMarketDataApiHandler({
+    apiKey: 'quote-refresh-rate-limit-retention-key',
+    providerRateLimitCooldownMs: 7_000,
+    fetchImpl: async () => {
+      calls += 1;
+      if (calls === 1) {
+        return { ok: true, json: async () => validQuote('AAPL', 215) };
+      }
+      return { ok: true, json: async () => ({ Note: 'PRIVATE PROVIDER RATE LIMIT DETAIL' }) };
+    },
+  });
+
+  const request = async (url) => {
+    const response = responseRecorder();
+    await handler({ method: 'GET', url }, response);
+    return response.result();
+  };
+
+  const initial = await request('/api/market-data/quote?symbol=AAPL');
+  assert.equal(initial.status, 200);
+  assert.equal(initial.body.data.price, 215);
+
+  const limitedRefresh = await request('/api/market-data/quote?symbol=AAPL&refresh=1');
+  assert.equal(limitedRefresh.status, 429);
+  assert.equal(limitedRefresh.headers['Retry-After'], '7');
+  assert.equal(limitedRefresh.body.status, 'rate_limited');
+  assert.equal(JSON.stringify(limitedRefresh.body).includes('PRIVATE PROVIDER RATE LIMIT DETAIL'), false);
+
+  const afterFailure = await request('/api/market-data/quote?symbol=AAPL');
+  assert.equal(afterFailure.status, 200);
+  assert.equal(afterFailure.body.data.price, 215);
+  assert.equal(calls, 2, 'a provider rate limit must preserve the previous valid quote cache entry');
+});
