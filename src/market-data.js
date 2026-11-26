@@ -12,7 +12,7 @@ function parseDecimalNumber(value, field, date) {
   const normalized = value.trim();
   // Alpha Vantage sends decimal strings. Reject JavaScript-only numeric
   // syntaxes (hex, binary, octal, separators, and exponent notation).
-  if (!/^(?:\\d+(?:\\.\\d*)?|\\.\\d+)$/.test(normalized)) {
+  if (!/^(?:\d+(?:\\.\d*)?|\\.\d+)$/.test(normalized)) {
     throw new Error(`Invalid ${field} value for ${date}.`);
   }
   const number = Number(normalized);
@@ -37,7 +37,10 @@ function parseVolume(value, date) {
   if (value === undefined || value === null || (typeof value === 'string' && value.trim() === '')) {
     throw new Error(`Missing volume value for ${date}.`);
   }
-  if (typeof value === 'string' && !/^\\d+$/.test(value.trim())) {
+  if (typeof value !== 'number' && typeof value !== 'string') {
+    throw new Error(`Invalid volume value for ${date}.`);
+  }
+  if (typeof value === 'string' && !/^\d+$/.test(value.trim())) {
     throw new Error(`Invalid volume value for ${date}.`);
   }
   const number = typeof value === 'number' ? value : Number(value.trim());
@@ -46,7 +49,7 @@ function parseVolume(value, date) {
 }
 
 function validateDate(value) {
-  if (typeof value !== 'string' || !/^\\d{4}-\\d{2}-\\d{2}$/.test(value)) return false;
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
   const date = new Date(`${value}T00:00:00.000Z`);
   return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value;
 }
