@@ -984,3 +984,36 @@ test('adjusted daily data missing corporate-action fields is not cached and can 
   assert.equal(recovered.body.data.adjustment, 'raw_with_adjusted_close');
   assert.equal(calls, 2, 'an incomplete adjusted response must not poison the cache');
 });
+
+
+test('failed quote refresh preserves the last successful cached snapshot', async () => {
+  let calls = 0;
+  const handler = createMarketDataApiHandler({
+    apiKey: 'quote-refresh-retention-key',
+    fetchImpl: async () => {
+      calls += 1;
+      if (calls === 1) {
+        return { ok: true, json: async () => validQuote('AAPL', 210) };
+      }
+      return { ok: false, status: 503, json: async () => ({}) };
+    },
+  });
+
+  const request = async (url) => {
+    const response = responseRecorder();
+    await handler({ method: 'GET', url }, response);
+    return response.result();
+  };
+
+  const initial = await request('/api/market-data/quote?symbol=AAPL');
+  assert.equal(initial.status, 200);
+  assert.equal(initial.body.data.price, 210);
+
+  const failedRefresh = await request('/api/market-data/quote?symbol=AAPL&refresh=1');
+  assert.equal(failedRefresh.status, 502);
+
+  const afterFailure = await request('/api/market-data/quote?symbol=AAPL');
+  assert.equal(afterFailure.status, 200);
+  assert.equal(afterFailure.body.data.price, 210);
+  assert.equal(calls, 2, 'a failed forced refresh must leave the previous valid cache entry available');
+});
