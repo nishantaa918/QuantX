@@ -900,3 +900,55 @@ test('quote endpoint rejects a provider snapshot for a different symbol', async 
   assert.equal(result.body.status, 'unavailable');
   assert.match(result.body.message, /no complete quote snapshot/i);
 });
+
+
+test('malformed provider payloads are not cached and can be retried for both market-data routes', async () => {
+  let quoteCalls = 0;
+  const quoteHandler = createMarketDataApiHandler({
+    apiKey: 'quote-retry-integrity-key',
+    fetchImpl: async () => {
+      quoteCalls += 1;
+      if (quoteCalls === 1) return { ok: true, json: async () => ({ 'Global Quote': {} }) };
+      return { ok: true, json: async () => validQuote('AAPL', 205) };
+    },
+  });
+
+  const quoteRequest = async () => {
+    const response = responseRecorder();
+    await quoteHandler({ method: 'GET', url: '/api/market-data/quote?symbol=AAPL' }, response);
+    return response.result();
+  };
+
+  const malformedQuote = await quoteRequest();
+  assert.equal(malformedQuote.status, 502);
+  const recoveredQuote = await quoteRequest();
+  assert.equal(recoveredQuote.status, 200);
+  assert.equal(recoveredQuote.body.data.price, 205);
+  assert.equal(quoteCalls, 2, 'a malformed quote must not poison the cache');
+
+  let dailyCalls = 0;
+  const dailyHandler = createMarketDataApiHandler({
+    apiKey: 'daily-retry-integrity-key',
+    fetchImpl: async (url) => {
+      dailyCalls += 1;
+      const symbol = new URL(url).searchParams.get('symbol');
+      if (dailyCalls === 1) {
+        return { ok: true, json: async () => dailyProviderPayload('MSFT') };
+      }
+      return { ok: true, json: async () => dailyProviderPayload(symbol) };
+    },
+  });
+
+  const dailyRequest = async () => {
+    const response = responseRecorder();
+    await dailyHandler({ method: 'GET', url: '/api/market-data/daily?symbol=AAPL' }, response);
+    return response.result();
+  };
+
+  const malformedDaily = await dailyRequest();
+  assert.equal(malformedDaily.status, 502);
+  const recoveredDaily = await dailyRequest();
+  assert.equal(recoveredDaily.status, 200);
+  assert.equal(recoveredDaily.body.data.symbol, 'AAPL');
+  assert.equal(dailyCalls, 2, 'a mismatched daily series must not poison the cache');
+});
