@@ -1,0 +1,38 @@
+name: Upstash connectivity
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ping:
+    name: Verify Upstash Redis connection
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    env:
+      UPSTASH_REDIS_REST_URL: ${{ secrets.UPSTASH_REDIS_REST_URL }}
+      UPSTASH_REDIS_REST_TOKEN: ${{ secrets.UPSTASH_REDIS_REST_TOKEN }}
+    steps:
+      - name: Check whether credentials are configured
+        id: credentials
+        shell: bash
+        run: |
+          if [ -z "$UPSTASH_REDIS_REST_URL" ] || [ -z "$UPSTASH_REDIS_REST_TOKEN" ]; then
+            echo "::notice::Upstash secrets are not configured in GitHub Actions. Add both repository secrets to run the live check."
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Check out repository
+        if: steps.credentials.outputs.configured == 'true'
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        if: steps.credentials.outputs.configured == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Ping Upstash Redis
+        if: steps.credentials.outputs.configured == 'true'
+        run: npm run test:upstash

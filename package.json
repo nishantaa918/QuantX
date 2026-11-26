@@ -8,7 +8,8 @@
     "build": "vite build",
     "preview": "vite preview",
     "test": "node --test",
-    "test:smoke": "node scripts/preview-smoke.mjs"
+    "test:smoke": "node scripts/preview-smoke.mjs",
+    "test:upstash": "node scripts/upstash-connectivity-check.mjs"
   },
   "dependencies": {
     "chart.js": "^4.6.1",
