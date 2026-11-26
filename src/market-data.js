@@ -12,7 +12,7 @@ function parseDecimalNumber(value, field, date) {
   const normalized = value.trim();
   // Alpha Vantage sends decimal strings. Reject JavaScript-only numeric
   // syntaxes (hex, binary, octal, separators, and exponent notation).
-  if (!/^(?:\d+(?:\\.\d*)?|\\.\d+)$/.test(normalized)) {
+  if (!/^(?:\d+(?:\.\d*)?|\.\d+)$/.test(normalized)) {
     throw new Error(`Invalid ${field} value for ${date}.`);
   }
   const number = Number(normalized);
